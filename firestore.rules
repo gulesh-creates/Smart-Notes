@@ -1,0 +1,226 @@
+rules_version = '2';
+
+// ============================================================================
+// Assumed Data Model
+// ============================================================================
+//
+// 1. User Profile Document: /users/{userId}
+//    Document ID: {userId} (matches Firebase Auth UID)
+//    Fields:
+//      - id: string (optional, 1..128 chars; if present must match userId)
+//      - email: string (required, valid email address, 5..254 chars)
+//      - displayName: string (required, 1..100 chars)
+//      - createdAt: number (required, immutable epoch milliseconds > 0)
+//      - updatedAt: number (optional, epoch milliseconds > 0)
+//      - photoURL: string (optional, 1..500 chars)
+//
+// 2. User Items Subcollection: /users/{userId}/items/{itemId}
+//    Document ID: {itemId} (string matching item.id, 1..128 chars)
+//    Fields:
+//      - id: string (required, immutable, 1..128 chars, matches itemId)
+//      - kind: string (required, immutable, enum: 'note' | 'folder')
+//      - parentId: string or null (required or null, 1..128 chars if string)
+//      - title: string (required, 0..500 chars)
+//      - color: string (optional, 1..50 chars theme / hex code)
+//      - contentHtml: string (optional, max 1,000,000 chars rich text HTML)
+//      - plainText: string (optional, max 500,000 chars searchable plain text)
+//      - blocks: list (optional, max 1,000 structured block AST nodes)
+//      - isPinned: bool (required)
+//      - isDeleted: bool (required tombstone flag)
+//      - orderIndex: number (required sibling sort order)
+//      - createdAt: number (required, immutable epoch milliseconds > 0)
+//      - updatedAt: number (required, epoch milliseconds > 0)
+//      - deletedAt: number or null (optional, epoch milliseconds > 0 if number)
+//      - version: number (required revision counter >= 1)
+//      - assetIds: list (required, max 100 referenced asset IDs)
+//      - mediaAnnotations: list (required, max 100 media annotation records)
+//      - userId: string (optional, if present must match request.auth.uid)
+//
+// 3. User Binary Assets Subcollection: /users/{userId}/assets/{assetId}
+//    Document ID: {assetId} (string matching asset.id, 1..128 chars)
+//    Fields:
+//      - id: string (required, immutable, 1..128 chars, matches assetId)
+//      - sha256: string (required, immutable, 1..128 chars hex hash)
+//      - mimeType: string (required, 1..100 chars)
+//      - byteLength: number (required, positive integer > 0 and <= 1GB)
+//      - filename: string (required, 1..255 chars)
+//      - createdAt: number (required, immutable epoch milliseconds > 0)
+//      - syncState: string (optional, enum: 'local' | 'synced' | 'pending_upload')
+//      - storagePath: string (optional, 1..500 chars)
+//      - userId: string (optional, if present must match request.auth.uid)
+//
+// ============================================================================
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ------------------------------------------------------------------------
+    // Core Helper Functions
+    // ------------------------------------------------------------------------
+
+    // Verify whether the request is from an authenticated user
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    // Verify whether the caller owns the user-scoped path
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+
+    // Validate email format and bounded length
+    function isValidEmail(email) {
+      return email is string &&
+        email.size() >= 5 &&
+        email.size() <= 254 &&
+        email.matches("^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}$");
+    }
+
+    // Validate string type and explicit length boundaries
+    function isValidString(val, minLen, maxLen) {
+      return val is string && val.size() >= minLen && val.size() <= maxLen;
+    }
+
+    // Validate optional string type and explicit length boundaries (if key exists)
+    function isValidOptionalString(data, field, minLen, maxLen) {
+      return !(field in data) ||
+        (data[field] is string && data[field].size() >= minLen && data[field].size() <= maxLen);
+    }
+
+    // Validate optional number (if key exists)
+    function isValidOptionalNumber(data, field, minVal) {
+      return !(field in data) || (data[field] is number && data[field] >= minVal);
+    }
+
+    // Validate list type and bounded size
+    function isValidList(val, maxSize) {
+      return val is list && val.size() <= maxSize;
+    }
+
+    // ------------------------------------------------------------------------
+    // Domain Validators: User Profile
+    // ------------------------------------------------------------------------
+
+    function isValidUser(data, userId) {
+      return data.keys().hasAll(['email', 'displayName', 'createdAt']) &&
+        data.keys().hasOnly(['id', 'email', 'displayName', 'createdAt', 'updatedAt', 'photoURL']) &&
+        (!('id' in data) || (data.id is string && data.id == userId)) &&
+        isValidEmail(data.email) &&
+        isValidString(data.displayName, 1, 100) &&
+        data.createdAt is number && data.createdAt > 0 &&
+        isValidOptionalNumber(data, 'updatedAt', 1) &&
+        isValidOptionalString(data, 'photoURL', 1, 500);
+    }
+
+    function areImmutableUserFieldsUnchanged() {
+      return (!('id' in resource.data) || request.resource.data.id == resource.data.id) &&
+        request.resource.data.createdAt == resource.data.createdAt;
+    }
+
+    // ------------------------------------------------------------------------
+    // Domain Validators: Notes & Folders (Items)
+    // ------------------------------------------------------------------------
+
+    function isValidItem(data, itemId) {
+      return data.keys().hasAll([
+          'id', 'kind', 'title', 'isPinned', 'isDeleted',
+          'orderIndex', 'createdAt', 'updatedAt', 'version',
+          'assetIds', 'mediaAnnotations'
+        ]) &&
+        data.keys().hasOnly([
+          'id', 'kind', 'parentId', 'title', 'color',
+          'contentHtml', 'plainText', 'blocks', 'isPinned',
+          'isDeleted', 'orderIndex', 'createdAt', 'updatedAt',
+          'deletedAt', 'version', 'assetIds', 'mediaAnnotations', 'userId'
+        ]) &&
+        data.id is string && data.id == itemId && data.id.size() >= 1 && data.id.size() <= 128 &&
+        data.kind is string && data.kind in ['note', 'folder'] &&
+        (!('parentId' in data) || data.parentId == null || (data.parentId is string && data.parentId.size() >= 1 && data.parentId.size() <= 128)) &&
+        data.title is string && data.title.size() <= 500 &&
+        isValidOptionalString(data, 'color', 1, 50) &&
+        isValidOptionalString(data, 'contentHtml', 0, 1000000) &&
+        isValidOptionalString(data, 'plainText', 0, 500000) &&
+        (!('blocks' in data) || isValidList(data.blocks, 1000)) &&
+        data.isPinned is bool &&
+        data.isDeleted is bool &&
+        data.orderIndex is number &&
+        data.createdAt is number && data.createdAt > 0 &&
+        data.updatedAt is number && data.updatedAt > 0 &&
+        (!('deletedAt' in data) || data.deletedAt == null || (data.deletedAt is number && data.deletedAt > 0)) &&
+        data.version is number && data.version >= 1 &&
+        isValidList(data.assetIds, 100) &&
+        isValidList(data.mediaAnnotations, 100) &&
+        (!('userId' in data) || (data.userId is string && data.userId == request.auth.uid));
+    }
+
+    function areImmutableItemFieldsUnchanged() {
+      return request.resource.data.id == resource.data.id &&
+        request.resource.data.kind == resource.data.kind &&
+        request.resource.data.createdAt == resource.data.createdAt &&
+        (!('userId' in resource.data) || request.resource.data.userId == resource.data.userId);
+    }
+
+    // ------------------------------------------------------------------------
+    // Domain Validators: Binary Asset Metadata
+    // ------------------------------------------------------------------------
+
+    function isValidAsset(data, assetId) {
+      return data.keys().hasAll([
+          'id', 'sha256', 'mimeType', 'byteLength', 'filename', 'createdAt'
+        ]) &&
+        data.keys().hasOnly([
+          'id', 'sha256', 'mimeType', 'byteLength', 'filename',
+          'createdAt', 'syncState', 'storagePath', 'userId'
+        ]) &&
+        data.id is string && data.id == assetId && data.id.size() >= 1 && data.id.size() <= 128 &&
+        data.sha256 is string && data.sha256.size() >= 1 && data.sha256.size() <= 128 &&
+        data.mimeType is string && data.mimeType.size() >= 1 && data.mimeType.size() <= 100 &&
+        data.byteLength is number && data.byteLength > 0 && data.byteLength <= 1073741824 &&
+        data.filename is string && data.filename.size() >= 1 && data.filename.size() <= 255 &&
+        data.createdAt is number && data.createdAt > 0 &&
+        (!('syncState' in data) || (data.syncState is string && data.syncState in ['local', 'synced', 'pending_upload'])) &&
+        isValidOptionalString(data, 'storagePath', 1, 500) &&
+        (!('userId' in data) || (data.userId is string && data.userId == request.auth.uid));
+    }
+
+    function areImmutableAssetFieldsUnchanged() {
+      return request.resource.data.id == resource.data.id &&
+        request.resource.data.createdAt == resource.data.createdAt &&
+        request.resource.data.sha256 == resource.data.sha256 &&
+        (!('userId' in resource.data) || request.resource.data.userId == resource.data.userId);
+    }
+
+    // ------------------------------------------------------------------------
+    // Security Rules & Access Control
+    // ------------------------------------------------------------------------
+
+    // Default deny: Block all read and write requests across the database
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // User profile document: strictly accessible only by the owning authenticated user
+    match /users/{userId} {
+      allow read: if isOwner(userId);
+      allow create: if isOwner(userId) && isValidUser(request.resource.data, userId);
+      allow update: if isOwner(userId) && isValidUser(request.resource.data, userId) && areImmutableUserFieldsUnchanged();
+      allow delete: if isOwner(userId);
+
+      // Notes and Folders subcollection
+      match /items/{itemId} {
+        allow read: if isOwner(userId);
+        allow create: if isOwner(userId) && isValidItem(request.resource.data, itemId);
+        allow update: if isOwner(userId) && isValidItem(request.resource.data, itemId) && areImmutableItemFieldsUnchanged();
+        allow delete: if isOwner(userId);
+      }
+
+      // Assets metadata subcollection
+      match /assets/{assetId} {
+        allow read: if isOwner(userId);
+        allow create: if isOwner(userId) && isValidAsset(request.resource.data, assetId);
+        allow update: if isOwner(userId) && isValidAsset(request.resource.data, assetId) && areImmutableAssetFieldsUnchanged();
+        allow delete: if isOwner(userId);
+      }
+    }
+  }
+}

@@ -1,3 +1,11 @@
+# Environment Variables
+.env
+.env.local
+*.env
+*.env.local
+!.env.example
+!packages/*/.env.example
+
 # Dependencies
 node_modules/
 */node_modules/
@@ -14,14 +22,13 @@ build/
 */*/build/
 
 # Server Data & Local DB
-*.db
-*.db-journal
-*.db-wal
-*.sqlite
-*.sqlite3
-packages/data/
-packages/server/data/
-packages/*/data/
+/data/
+/packages/data/
+packages/server/data/*.db
+packages/server/data/*.db-journal
+packages/server/data/uploads/*
+!packages/server/data/.gitkeep
+!packages/server/data/uploads/.gitkeep
 
 # Android Build & Local Configuration
 packages/client/android/.gradle/
@@ -47,3 +54,4 @@ Thumbs.db
 .idea/
 *.sublime-project
 *.sublime-workspace
+

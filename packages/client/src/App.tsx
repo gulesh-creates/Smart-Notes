@@ -37,6 +37,13 @@ import {
   dbGetOutboxMutations,
   dbRemoveOutboxMutations
 } from './storage/db';
+import {
+  firebaseAuthenticate,
+  firebaseSignOut,
+  syncItemToFirestore,
+  deleteItemInFirestore,
+  fetchItemsFromFirestore
+} from './firebase/firebase';
 
 async function computeSha256(blob: Blob): Promise<string> {
   const buffer = await blob.arrayBuffer();
@@ -105,11 +112,20 @@ export const App: React.FC = () => {
         setTheme(savedTheme);
         applyTheme(savedTheme);
 
-        // Load auth token
+        // Load auth token & profile
         const token = await dbGetSetting<string | null>('auth_token', null);
+        const savedUserStr = await dbGetSetting<string | null>('auth_user', null);
         if (token) {
           setAuthToken(token);
-          fetchCurrentUser(token);
+          if (savedUserStr) {
+            try {
+              setCurrentUser(JSON.parse(savedUserStr));
+            } catch {
+              fetchCurrentUser(token);
+            }
+          } else {
+            fetchCurrentUser(token);
+          }
         }
 
         // Load items from IndexedDB
@@ -191,6 +207,39 @@ export const App: React.FC = () => {
   };
 
   const handleLogin = async (email: string, pass: string) => {
+    // 1. Authenticate with Firebase Auth
+    try {
+      const fbUser = await firebaseAuthenticate(email, pass);
+      setAuthToken(fbUser.id);
+      setCurrentUser(fbUser);
+      await dbSetSetting('auth_token', fbUser.id);
+      await dbSetSetting('auth_user', JSON.stringify(fbUser));
+      showToast(`Welcome back, ${fbUser.displayName}!`);
+
+      // Sync items with Firestore
+      try {
+        const remoteItems = await fetchItemsFromFirestore(fbUser.id);
+        if (remoteItems && remoteItems.length > 0) {
+          await dbSaveItemsBatch(remoteItems);
+          const all = await dbGetAllItems(true);
+          setItems(all);
+        } else {
+          const localItems = await dbGetAllItems(true);
+          for (const item of localItems) {
+            await syncItemToFirestore(fbUser.id, item);
+          }
+        }
+      } catch (syncErr) {
+        console.warn('Firestore initial sync warning:', syncErr);
+      }
+
+      setCloudSyncState('synced');
+      return;
+    } catch (fbErr: any) {
+      console.warn('Firebase login attempt fallback:', fbErr?.message || fbErr);
+    }
+
+    // Fallback to Express backend if Firebase auth was not reachable
     const res = await fetch('/api/auth/login', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -201,11 +250,32 @@ export const App: React.FC = () => {
     setAuthToken(data.token);
     setCurrentUser(data.user);
     await dbSetSetting('auth_token', data.token);
+    await dbSetSetting('auth_user', JSON.stringify(data.user));
     showToast(`Welcome back, ${data.user.displayName}!`);
     triggerSync();
   };
 
   const handleRegister = async (email: string, pass: string, name: string) => {
+    // 1. Authenticate / Register with Firebase Auth
+    try {
+      const fbUser = await firebaseAuthenticate(email, pass, name);
+      setAuthToken(fbUser.id);
+      setCurrentUser(fbUser);
+      await dbSetSetting('auth_token', fbUser.id);
+      await dbSetSetting('auth_user', JSON.stringify(fbUser));
+      showToast(`Account created for ${fbUser.displayName}!`);
+
+      const localItems = await dbGetAllItems(true);
+      for (const item of localItems) {
+        await syncItemToFirestore(fbUser.id, item);
+      }
+      setCloudSyncState('synced');
+      return;
+    } catch (fbErr: any) {
+      console.warn('Firebase register attempt fallback:', fbErr?.message || fbErr);
+    }
+
+    // Fallback to Express backend
     const res = await fetch('/api/auth/register', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -216,6 +286,7 @@ export const App: React.FC = () => {
     setAuthToken(data.token);
     setCurrentUser(data.user);
     await dbSetSetting('auth_token', data.token);
+    await dbSetSetting('auth_user', JSON.stringify(data.user));
     showToast(`Account created for ${data.user.displayName}!`);
     triggerSync();
   };
@@ -224,6 +295,8 @@ export const App: React.FC = () => {
     setAuthToken(null);
     setCurrentUser(null);
     await dbSetSetting('auth_token', null);
+    await dbSetSetting('auth_user', null);
+    await firebaseSignOut();
     showToast('Signed out of cloud sync.');
   };
 
@@ -289,6 +362,16 @@ export const App: React.FC = () => {
     return () => clearInterval(interval);
   }, [triggerSync]);
 
+  // Persistent Database & Cloud Sync Helper
+  const persistItem = async (item: Item, queueForSync = true) => {
+    await dbSaveItem(item, queueForSync);
+    if (currentUser?.id) {
+      syncItemToFirestore(currentUser.id, item).catch(err => {
+        console.warn('Firestore sync warning:', err);
+      });
+    }
+  };
+
   // Note Selection & Editing
   const selectedNote = items.find(i => i.id === selectedNoteId && !i.isDeleted) || null;
 
@@ -316,7 +399,7 @@ export const App: React.FC = () => {
         if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
         saveTimerRef.current = setTimeout(async () => {
           try {
-            await dbSaveItem(updatedItem, true);
+            await persistItem(updatedItem, true);
             setLocalSaveState('saved');
             if (authToken) triggerSync();
           } catch (e) {
@@ -351,7 +434,7 @@ export const App: React.FC = () => {
       mediaAnnotations: []
     };
 
-    await dbSaveItem(newNote, true);
+    await persistItem(newNote, true);
     setItems(prev => [...prev, newNote]);
     setSelectedNoteId(newId);
     showToast('New note created');
@@ -397,7 +480,7 @@ export const App: React.FC = () => {
         mediaAnnotations: []
       };
 
-      await dbSaveItem(newFolder, true);
+      await persistItem(newFolder, true);
       setItems(prev => [...prev, newFolder]);
       setSelectedFolderId(newFolderId);
       setSpecialFilter('all');
@@ -412,7 +495,7 @@ export const App: React.FC = () => {
         updatedAt: Date.now()
       };
 
-      await dbSaveItem(updatedFolder, true);
+      await persistItem(updatedFolder, true);
       setItems(prev => prev.map(i => (i.id === updatedFolder.id ? updatedFolder : i)));
       showToast(`Folder "${updatedFolder.title}" updated`);
       if (authToken) triggerSync();
@@ -458,7 +541,7 @@ export const App: React.FC = () => {
       mediaAnnotations: []
     };
 
-    await dbSaveItem(childNote, true);
+    await persistItem(childNote, true);
     setItems(prev => [...prev, childNote]);
     setSelectedNoteId(newId);
     showToast('Nested child note created');
@@ -487,7 +570,7 @@ export const App: React.FC = () => {
       updatedAt: Date.now()
     };
 
-    await dbSaveItem(updatedItem, true);
+    await persistItem(updatedItem, true);
     setItems(prev => prev.map(i => (i.id === itemId ? updatedItem : i)));
     setIsMoveModalOpen(false);
     setMovingItemId(null);
@@ -501,6 +584,9 @@ export const App: React.FC = () => {
 
     for (const id of allIdsToDelete) {
       await dbMarkItemDeleted(id);
+      if (currentUser?.id) {
+        deleteItemInFirestore(currentUser.id, id).catch(() => {});
+      }
     }
 
     setItems(prev =>
@@ -595,7 +681,7 @@ export const App: React.FC = () => {
 
   // Conflict Resolution
   const handleResolveConflict = async (resolvedItem: Item) => {
-    await dbSaveItem(resolvedItem, true);
+    await persistItem(resolvedItem, true);
     setItems(prev => prev.map(i => (i.id === resolvedItem.id ? resolvedItem : i)));
     setSyncConflict(null);
     setCloudSyncState('synced');

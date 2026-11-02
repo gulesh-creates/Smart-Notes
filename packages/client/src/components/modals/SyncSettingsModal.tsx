@@ -39,9 +39,9 @@ export const SyncSettingsModal: React.FC<SyncSettingsModalProps> = ({
   
   // Auth Form State
   const [authMode, setAuthMode] = useState<'login' | 'register'>('login');
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
-  const [displayName, setDisplayName] = useState('');
+  const [email, setEmail] = useState('gulesh_creates');
+  const [password, setPassword] = useState('6266100');
+  const [displayName, setDisplayName] = useState('Gulesh');
   const [authLoading, setAuthLoading] = useState(false);
   const [authError, setAuthError] = useState('');
 
@@ -289,13 +289,31 @@ export const SyncSettingsModal: React.FC<SyncSettingsModalProps> = ({
                       </div>
                     )}
                     <div>
-                      <label style={{ fontSize: '0.76rem', fontWeight: 600, color: 'var(--text-secondary)', display: 'block', marginBottom: '4px' }}>Email</label>
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '4px' }}>
+                        <label style={{ fontSize: '0.76rem', fontWeight: 600, color: 'var(--text-secondary)' }}>Username or Email</label>
+                        <button
+                          type="button"
+                          onClick={() => { setEmail('gulesh_creates'); setPassword('6266100'); }}
+                          style={{
+                            border: 'none',
+                            background: 'var(--lime-pale)',
+                            color: '#12241A',
+                            fontSize: '0.72rem',
+                            fontWeight: 700,
+                            padding: '2px 8px',
+                            borderRadius: 'var(--radius-pill)',
+                            cursor: 'pointer'
+                          }}
+                        >
+                          Auto-fill gulesh_creates
+                        </button>
+                      </div>
                       <input
-                        type="email"
+                        type="text"
                         required
                         value={email}
                         onChange={e => setEmail(e.target.value)}
-                        placeholder="name@example.com"
+                        placeholder="gulesh_creates or name@example.com"
                         style={{ width: '100%', padding: '8px 12px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-medium)', background: 'var(--bg-surface-elevated)', color: 'var(--text-main)', fontSize: '0.86rem' }}
                       />
                     </div>
@@ -311,7 +329,7 @@ export const SyncSettingsModal: React.FC<SyncSettingsModalProps> = ({
                       />
                     </div>
                     <button type="submit" className="btn btn-primary" disabled={authLoading} style={{ marginTop: '8px' }}>
-                      {authLoading ? 'Authenticating...' : authMode === 'login' ? 'Sign In & Enable Cloud Sync' : 'Register & Start Syncing'}
+                      {authLoading ? 'Connecting to Firebase...' : authMode === 'login' ? 'Sign In & Enable Cloud Sync' : 'Register & Start Syncing'}
                     </button>
                   </form>
                 </div>
