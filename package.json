@@ -1,0 +1,31 @@
+{
+  "name": "smart-notes",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Smart Notes — Offline-First Production Note Taking & Knowledge Base",
+  "workspaces": [
+    "packages/*"
+  ],
+  "scripts": {
+    "build:shared": "npm run build --workspace=packages/shared",
+    "dev:client": "npm run dev --workspace=packages/client",
+    "build:client": "npm run build --workspace=packages/client",
+    "dev:server": "npm run dev --workspace=packages/server",
+    "build:server": "npm run build --workspace=packages/server",
+    "dev": "concurrently \"npm run dev:server\" \"npm run dev:client\"",
+    "build": "npm run build:shared && npm run build:server && npm run build:client",
+    "test": "npm run test --workspace=packages/shared && npm run test --workspace=packages/server && npm run test --workspace=packages/client"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.6",
+    "concurrently": "^9.1.2",
+    "puppeteer-core": "^25.16.0",
+    "sqlite3": "^6.0.1",
+    "typescript": "^5.7.3"
+  },
+  "allowScripts": {
+    "esbuild@0.25.12": true,
+    "esbuild@0.28.2": true,
+    "sqlite3@6.0.1": true
+  }
+}

@@ -1,0 +1,5016 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>Smart Notes — Offline-First Knowledge Base</title>
+  
+  <!-- Modern Clean Typography -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  
+  <!-- JSZip for ZIP Export (with built-in offline Pure-JS fallback) -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+  
+  <!-- PDF.js for authentic PDF page rendering (with built-in offline SVG/Canvas fallback) -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+  <script>
+    if (window.pdfjsLib) {
+      window.pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+    }
+  </script>
+  <style>
+    :root {
+      --bg-deep: #09100a;
+      --bg-canvas: #0c150e;
+      --bg-surface: #122116;
+      --bg-surface-elevated: #182c1e;
+      --bg-surface-glass: rgba(18, 33, 22, 0.82);
+      --bg-card: #15271a;
+      --bg-card-hover: #1c3322;
+      --bg-card-active: #223e2a;
+
+      --lime-primary: #b8f627;
+      --lime-bright: #cbfa3b;
+      --lime-pale: #e2fd99;
+      --lime-muted: rgba(184, 246, 39, 0.15);
+      --lime-glow: rgba(184, 246, 39, 0.28);
+      --lime-border: rgba(184, 246, 39, 0.35);
+
+      --forest-dark: #071309;
+      --forest-mid: #0e2a16;
+      --forest-light: #1e4d28;
+
+      --text-main: #f5f8f3;
+      --text-secondary: #9cb09f;
+      --text-tertiary: #657767;
+      --text-inverse: #09150a;
+
+      --border-subtle: rgba(255, 255, 255, 0.08);
+      --border-medium: rgba(255, 255, 255, 0.14);
+
+      --danger: #ff5252;
+      --danger-bg: rgba(255, 82, 82, 0.15);
+      --warning: #ffb142;
+      --info: #34ace0;
+
+      --radius-xs: 6px;
+      --radius-sm: 10px;
+      --radius-md: 16px;
+      --radius-lg: 24px;
+      --radius-xl: 32px;
+      --radius-pill: 9999px;
+
+      --shadow-sm: 0 4px 12px rgba(0, 0, 0, 0.25);
+      --shadow-md: 0 8px 24px rgba(0, 0, 0, 0.35);
+      --shadow-lg: 0 16px 40px rgba(0, 0, 0, 0.5);
+      --shadow-lime: 0 0 20px rgba(184, 246, 39, 0.3);
+
+      --font-sans: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, 'Inter', 'Segoe UI', Roboto, sans-serif;
+      --font-mono: 'JetBrains Mono', Menlo, Consolas, monospace;
+
+      --header-height: 54px;
+      --sidebar-w: 260px;
+      --notes-list-w: 320px;
+      --transition-fast: 0.15s cubic-bezier(0.4, 0, 0.2, 1);
+      --transition-normal: 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    body {
+      font-family: var(--font-sans);
+      background-color: var(--bg-deep);
+      color: var(--text-main);
+      min-height: 100vh;
+      overflow-x: hidden;
+      user-select: none;
+    }
+
+    input, textarea, button, select {
+      font-family: inherit;
+    }
+
+    /* Scrollbars */
+    ::-webkit-scrollbar {
+      width: 6px;
+      height: 6px;
+    }
+    ::-webkit-scrollbar-track {
+      background: transparent;
+    }
+    ::-webkit-scrollbar-thumb {
+      background: rgba(255, 255, 255, 0.16);
+      border-radius: var(--radius-pill);
+    }
+    ::-webkit-scrollbar-thumb:hover {
+      background: var(--lime-primary);
+    }
+
+    /* Top Switcher & Control Header */
+    .top-nav-bar {
+      height: var(--header-height);
+      background: var(--bg-deep);
+      border-bottom: 1px solid var(--border-subtle);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 1.25rem;
+      position: sticky;
+      top: 0;
+      z-index: 1000;
+    }
+
+    .brand-section {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+    }
+
+    .brand-icon {
+      width: 32px;
+      height: 32px;
+      border-radius: 10px;
+      background: var(--lime-primary);
+      color: var(--text-inverse);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      box-shadow: var(--shadow-lime);
+    }
+
+    .brand-title {
+      font-weight: 700;
+      font-size: 1.1rem;
+      letter-spacing: -0.02em;
+      color: var(--text-main);
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+
+    .brand-badge {
+      font-size: 0.65rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      background: var(--lime-muted);
+      color: var(--lime-primary);
+      border: 1px solid var(--lime-border);
+      padding: 2px 8px;
+      border-radius: var(--radius-pill);
+    }
+
+    .device-switcher-dock {
+      display: flex;
+      align-items: center;
+      background: var(--bg-surface);
+      border: 1px solid var(--border-subtle);
+      border-radius: var(--radius-pill);
+      padding: 3px;
+      gap: 2px;
+    }
+
+    .switch-btn {
+      background: transparent;
+      border: none;
+      color: var(--text-secondary);
+      font-size: 0.78rem;
+      font-weight: 600;
+      padding: 6px 14px;
+      border-radius: var(--radius-pill);
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      transition: all var(--transition-fast);
+    }
+
+    .switch-btn:hover {
+      color: var(--text-main);
+      background: rgba(255, 255, 255, 0.05);
+    }
+
+    .switch-btn.active {
+      background: var(--lime-primary);
+      color: var(--text-inverse);
+      box-shadow: var(--shadow-sm);
+    }
+
+    .top-actions {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+    }
+
+    .sync-status-pill {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      background: var(--bg-surface);
+      border: 1px solid var(--border-subtle);
+      border-radius: var(--radius-pill);
+      padding: 4px 12px;
+      font-size: 0.75rem;
+      color: var(--text-secondary);
+      cursor: pointer;
+      transition: var(--transition-fast);
+    }
+
+    .sync-status-pill:hover {
+      border-color: var(--lime-border);
+      color: var(--text-main);
+    }
+
+    .pulse-dot {
+      width: 8px;
+      height: 8px;
+      background: var(--lime-primary);
+      border-radius: 50%;
+      box-shadow: 0 0 8px var(--lime-primary);
+    }
+
+    /* Common Buttons */
+    .btn {
+      background: var(--bg-surface);
+      border: 1px solid var(--border-subtle);
+      color: var(--text-main);
+      padding: 7px 14px;
+      border-radius: var(--radius-btn, 12px);
+      font-size: 0.82rem;
+      font-weight: 600;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      transition: all var(--transition-fast);
+      white-space: nowrap;
+    }
+
+    .btn:hover {
+      background: var(--bg-surface-elevated);
+      border-color: var(--border-medium);
+    }
+
+    .btn-primary {
+      background: var(--lime-primary);
+      border: 1px solid var(--lime-primary);
+      color: var(--text-inverse);
+      box-shadow: var(--shadow-sm);
+    }
+
+    .btn-primary:hover {
+      background: var(--lime-bright);
+      box-shadow: var(--shadow-lime);
+    }
+
+    .btn-icon {
+      width: 34px;
+      height: 34px;
+      padding: 0;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      border-radius: var(--radius-sm);
+    }
+
+    .btn-sm {
+      padding: 5px 10px;
+      font-size: 0.75rem;
+    }
+
+    /* Viewport */
+    .app-viewport {
+      min-height: calc(100vh - var(--header-height));
+      display: flex;
+      justify-content: center;
+      align-items: stretch;
+      background: var(--bg-canvas);
+      position: relative;
+    }
+
+    /* Desktop View */
+    .desktop-view {
+      width: 100%;
+      display: flex;
+      height: calc(100vh - var(--header-height));
+      overflow: hidden;
+    }
+
+    /* Sidebar Column */
+    .sidebar {
+      width: var(--sidebar-w);
+      background: var(--bg-surface);
+      border-right: 1px solid var(--border-subtle);
+      display: flex;
+      flex-direction: column;
+      flex-shrink: 0;
+      transition: width var(--transition-normal), opacity var(--transition-normal);
+    }
+
+    .sidebar.collapsed {
+      width: 0;
+      opacity: 0;
+      overflow: hidden;
+      border-right: none;
+    }
+
+    .sidebar-header {
+      padding: 1rem;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      border-bottom: 1px solid var(--border-subtle);
+    }
+
+    .sidebar-title {
+      font-size: 0.73rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: var(--text-tertiary);
+    }
+
+    .sidebar-scroll {
+      flex: 1;
+      overflow-y: auto;
+      padding: 0.75rem 0.6rem;
+    }
+
+    .nav-link {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 7px 10px;
+      border-radius: var(--radius-sm);
+      color: var(--text-secondary);
+      font-size: 0.83rem;
+      font-weight: 500;
+      cursor: pointer;
+      transition: var(--transition-fast);
+      margin-bottom: 2px;
+    }
+
+    .nav-link:hover {
+      background: var(--bg-surface-elevated);
+      color: var(--text-main);
+    }
+
+    .nav-link.active {
+      background: var(--lime-muted);
+      color: var(--lime-primary);
+      font-weight: 600;
+    }
+
+    .nav-link .badge-count {
+      margin-left: auto;
+      font-size: 0.72rem;
+      color: var(--text-tertiary);
+      background: var(--bg-deep);
+      padding: 2px 7px;
+      border-radius: var(--radius-pill);
+    }
+
+    .tree-container {
+      margin-top: 0.65rem;
+    }
+
+    .tree-header-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0.5rem 0.5rem 0.25rem 0.5rem;
+    }
+
+    .tree-header-label {
+      font-size: 0.7rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      color: var(--text-tertiary);
+    }
+
+    .tree-item-row {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      padding: 5px 8px;
+      border-radius: var(--radius-sm);
+      cursor: pointer;
+      font-size: 0.82rem;
+      color: var(--text-secondary);
+      transition: var(--transition-fast);
+      position: relative;
+    }
+
+    .tree-item-row:hover {
+      background: var(--bg-surface-elevated);
+      color: var(--text-main);
+    }
+
+    .tree-item-row.selected {
+      background: var(--lime-muted);
+      color: var(--lime-primary);
+      font-weight: 600;
+    }
+
+    .tree-arrow {
+      width: 18px;
+      height: 18px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      color: var(--text-tertiary);
+      transition: transform var(--transition-fast);
+      flex-shrink: 0;
+    }
+
+    .tree-arrow:hover {
+      color: var(--text-main);
+    }
+
+    .tree-arrow.open {
+      transform: rotate(90deg);
+    }
+
+    .tree-icon {
+      flex-shrink: 0;
+      display: flex;
+      align-items: center;
+    }
+
+    .tree-title {
+      flex: 1;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .tree-row-actions {
+      opacity: 0;
+      display: flex;
+      align-items: center;
+      gap: 2px;
+      transition: opacity var(--transition-fast);
+    }
+
+    .tree-item-row:hover .tree-row-actions {
+      opacity: 1;
+    }
+
+    .tree-action-btn {
+      background: transparent;
+      border: none;
+      color: var(--text-tertiary);
+      padding: 2px 4px;
+      border-radius: 4px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+    }
+
+    .tree-action-btn:hover {
+      color: var(--text-main);
+      background: rgba(255, 255, 255, 0.12);
+    }
+
+    .tree-sub-tree {
+      margin-left: 14px;
+      border-left: 1px solid rgba(255, 255, 255, 0.08);
+      padding-left: 2px;
+      display: none;
+    }
+
+    .tree-sub-tree.open {
+      display: block;
+    }
+
+    .sidebar-footer {
+      padding: 0.85rem;
+      border-top: 1px solid var(--border-subtle);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      font-size: 0.72rem;
+      color: var(--text-tertiary);
+    }
+
+    /* Middle Notes List Column */
+    .notes-column {
+      width: var(--notes-list-w);
+      background: var(--bg-canvas);
+      border-right: 1px solid var(--border-subtle);
+      display: flex;
+      flex-direction: column;
+      flex-shrink: 0;
+      transition: width var(--transition-normal), opacity var(--transition-normal);
+    }
+
+    .notes-column.collapsed {
+      width: 0;
+      opacity: 0;
+      overflow: hidden;
+      border-right: none;
+    }
+
+    .notes-column-header {
+      padding: 1rem;
+      border-bottom: 1px solid var(--border-subtle);
+      display: flex;
+      flex-direction: column;
+      gap: 0.65rem;
+    }
+
+    .column-headline-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .column-title {
+      font-size: 1.1rem;
+      font-weight: 700;
+      letter-spacing: -0.01em;
+      color: var(--text-main);
+    }
+
+    .search-box {
+      position: relative;
+      display: flex;
+      align-items: center;
+    }
+
+    .search-input {
+      width: 100%;
+      background: var(--bg-surface);
+      border: 1px solid var(--border-subtle);
+      border-radius: var(--radius-pill);
+      padding: 7px 12px 7px 34px;
+      color: var(--text-main);
+      font-size: 0.82rem;
+      outline: none;
+      transition: var(--transition-fast);
+    }
+
+    .search-input:focus {
+      border-color: var(--lime-primary);
+      box-shadow: 0 0 0 2px var(--lime-muted);
+    }
+
+    .search-icon-pos {
+      position: absolute;
+      left: 11px;
+      color: var(--text-tertiary);
+      pointer-events: none;
+      display: flex;
+    }
+
+    .search-clear-btn {
+      position: absolute;
+      right: 10px;
+      background: transparent;
+      border: none;
+      color: var(--text-tertiary);
+      cursor: pointer;
+      display: none;
+    }
+
+    .notes-filter-chips {
+      display: flex;
+      gap: 6px;
+      overflow-x: auto;
+      padding-bottom: 2px;
+    }
+
+    .filter-chip {
+      background: var(--bg-surface);
+      border: 1px solid var(--border-subtle);
+      color: var(--text-secondary);
+      font-size: 0.72rem;
+      font-weight: 600;
+      padding: 3px 10px;
+      border-radius: var(--radius-pill);
+      cursor: pointer;
+      white-space: nowrap;
+      transition: var(--transition-fast);
+    }
+
+    .filter-chip:hover {
+      color: var(--text-main);
+    }
+
+    .filter-chip.active {
+      background: var(--lime-primary);
+      color: var(--text-inverse);
+      border-color: var(--lime-primary);
+    }
+
+    .notes-cards-list {
+      flex: 1;
+      overflow-y: auto;
+      padding: 0.75rem;
+      display: flex;
+      flex-direction: column;
+      gap: 0.6rem;
+    }
+
+    .note-card {
+      background: var(--bg-card);
+      border: 1px solid var(--border-subtle);
+      border-radius: var(--radius-card-sm, 16px);
+      padding: 0.9rem;
+      cursor: pointer;
+      transition: all var(--transition-fast);
+      position: relative;
+      display: flex;
+      flex-direction: column;
+      gap: 0.45rem;
+    }
+
+    .note-card:hover {
+      background: var(--bg-card-hover);
+      border-color: var(--border-medium);
+      transform: translateY(-1px);
+      box-shadow: var(--shadow-sm);
+    }
+
+    .note-card.active {
+      background: var(--bg-card-active);
+      border-color: var(--lime-border);
+      box-shadow: 0 0 0 1px var(--lime-primary);
+    }
+
+    .note-card-top {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 6px;
+    }
+
+    .note-card-title {
+      font-size: 0.9rem;
+      font-weight: 600;
+      color: var(--text-main);
+      line-height: 1.3;
+      display: -webkit-box;
+      -webkit-line-clamp: 2;
+      -webkit-box-orient: vertical;
+      overflow: hidden;
+    }
+
+    .note-card-excerpt {
+      font-size: 0.76rem;
+      color: var(--text-secondary);
+      line-height: 1.4;
+      display: -webkit-box;
+      -webkit-line-clamp: 2;
+      -webkit-box-orient: vertical;
+      overflow: hidden;
+    }
+
+    .note-card-meta {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      font-size: 0.68rem;
+      color: var(--text-tertiary);
+      margin-top: 3px;
+    }
+
+    .note-card-badges {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+    }
+
+    .badge-tag {
+      font-size: 0.62rem;
+      font-weight: 600;
+      padding: 2px 6px;
+      border-radius: var(--radius-pill);
+      background: var(--bg-surface-elevated);
+      color: var(--text-secondary);
+    }
+
+    .badge-tag.lime {
+      background: var(--lime-muted);
+      color: var(--lime-primary);
+      border: 1px solid var(--lime-border);
+    }
+
+    .badge-pin {
+      color: var(--lime-primary);
+    }
+
+    .search-match {
+      background: var(--lime-primary);
+      color: var(--text-inverse);
+      padding: 0 2px;
+      border-radius: 2px;
+      font-weight: 700;
+    }
+
+    /* Right Editor Column */
+    .editor-column {
+      flex: 1;
+      background: var(--bg-deep);
+      display: flex;
+      flex-direction: column;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .editor-header {
+      padding: 0.7rem 1.5rem;
+      border-bottom: 1px solid var(--border-subtle);
+      background: var(--bg-surface-glass);
+      backdrop-filter: blur(12px);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 1rem;
+      z-index: 10;
+    }
+
+    .breadcrumb-nav {
+      display: flex;
+      align-items: center;
+      gap: 5px;
+      font-size: 0.76rem;
+      color: var(--text-tertiary);
+      overflow-x: auto;
+      white-space: nowrap;
+    }
+
+    .breadcrumb-item {
+      cursor: pointer;
+      transition: var(--transition-fast);
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+    }
+
+    .breadcrumb-item:hover {
+      color: var(--lime-primary);
+      text-decoration: underline;
+    }
+
+    .breadcrumb-separator {
+      color: var(--text-tertiary);
+      opacity: 0.5;
+    }
+
+    .editor-top-actions {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .save-indicator {
+      font-size: 0.72rem;
+      color: var(--text-secondary);
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      background: var(--bg-surface);
+      padding: 4px 10px;
+      border-radius: var(--radius-pill);
+      border: 1px solid var(--border-subtle);
+    }
+
+    .save-indicator.saving {
+      color: var(--warning);
+    }
+
+    /* Rich Formatting Toolbar */
+    .rich-toolbar {
+      padding: 0.4rem 1.5rem;
+      border-bottom: 1px solid var(--border-subtle);
+      background: var(--bg-surface);
+      display: flex;
+      align-items: center;
+      gap: 3px;
+      flex-wrap: wrap;
+      z-index: 9;
+    }
+
+    .toolbar-btn {
+      background: transparent;
+      border: none;
+      color: var(--text-secondary);
+      width: 30px;
+      height: 30px;
+      border-radius: var(--radius-xs);
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      font-size: 0.85rem;
+      transition: var(--transition-fast);
+    }
+
+    .toolbar-btn:hover {
+      background: var(--bg-surface-elevated);
+      color: var(--text-main);
+    }
+
+    .toolbar-btn.active {
+      background: var(--lime-muted);
+      color: var(--lime-primary);
+    }
+
+    .toolbar-sep {
+      width: 1px;
+      height: 18px;
+      background: var(--border-subtle);
+      margin: 0 4px;
+    }
+
+    .toolbar-select {
+      background: var(--bg-surface-elevated);
+      border: 1px solid var(--border-subtle);
+      color: var(--text-main);
+      font-size: 0.78rem;
+      font-weight: 500;
+      padding: 3px 6px;
+      border-radius: var(--radius-xs);
+      outline: none;
+      cursor: pointer;
+    }
+
+    /* Color Pickers in Toolbar */
+    .color-dropdown-trigger {
+      position: relative;
+      display: inline-flex;
+    }
+
+    .color-palette-popover {
+      position: absolute;
+      top: 100%;
+      left: 0;
+      background: var(--bg-surface-elevated);
+      border: 1px solid var(--border-medium);
+      border-radius: var(--radius-sm);
+      padding: 8px;
+      display: none;
+      grid-template-columns: repeat(4, 22px);
+      gap: 6px;
+      z-index: 100;
+      box-shadow: var(--shadow-md);
+      margin-top: 4px;
+    }
+
+    .color-palette-popover.open {
+      display: grid;
+    }
+
+    .color-swatch-opt {
+      width: 22px;
+      height: 22px;
+      border-radius: 50%;
+      border: 2px solid transparent;
+      cursor: pointer;
+      transition: transform var(--transition-fast);
+    }
+
+    .color-swatch-opt:hover {
+      transform: scale(1.15);
+      border-color: #fff;
+    }
+
+    /* Editor Body Area */
+    .editor-scroll-area {
+      flex: 1;
+      overflow-y: auto;
+      padding: 2.2rem 14% 4rem 14%;
+      display: flex;
+      flex-direction: column;
+    }
+
+    .editor-title-input {
+      font-size: 2.1rem;
+      font-weight: 800;
+      letter-spacing: -0.03em;
+      color: var(--text-main);
+      background: transparent;
+      border: none;
+      outline: none;
+      width: 100%;
+      margin-bottom: 0.5rem;
+      line-height: 1.2;
+    }
+
+    .editor-title-input::placeholder {
+      color: var(--text-tertiary);
+      opacity: 0.45;
+    }
+
+    .editor-meta-bar {
+      display: flex;
+      align-items: center;
+      gap: 1.25rem;
+      font-size: 0.73rem;
+      color: var(--text-tertiary);
+      margin-bottom: 1.75rem;
+      padding-bottom: 0.75rem;
+      border-bottom: 1px solid var(--border-subtle);
+    }
+
+    .editor-content-area {
+      flex: 1;
+      outline: none;
+      font-size: 1.02rem;
+      line-height: 1.75;
+      color: #e6ede4;
+      min-height: 250px;
+      user-select: text;
+    }
+
+    .editor-content-area:empty::before {
+      content: "Type note body here, use rich formatting, or drag & drop images/PDFs...";
+      color: var(--text-tertiary);
+      opacity: 0.5;
+      pointer-events: none;
+    }
+
+    /* Content Area Typography & Elements */
+    .editor-content-area h1 { font-size: 1.8rem; font-weight: 700; margin: 1.4rem 0 0.7rem 0; color: var(--text-main); }
+    .editor-content-area h2 { font-size: 1.4rem; font-weight: 700; margin: 1.2rem 0 0.5rem 0; color: var(--text-main); }
+    .editor-content-area h3 { font-size: 1.15rem; font-weight: 600; margin: 1rem 0 0.35rem 0; color: var(--text-main); }
+    .editor-content-area p { margin-bottom: 0.95rem; }
+    .editor-content-area ul, .editor-content-area ol { margin: 0.5rem 0 1rem 1.4rem; }
+    .editor-content-area li { margin-bottom: 0.3rem; }
+    .editor-content-area blockquote {
+      border-left: 3px solid var(--lime-primary);
+      background: var(--bg-surface);
+      padding: 0.75rem 1.2rem;
+      border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+      margin: 1rem 0;
+      font-style: italic;
+      color: var(--lime-pale);
+    }
+    .editor-content-area pre, .editor-content-area code {
+      font-family: var(--font-mono);
+      background: var(--bg-surface);
+      border: 1px solid var(--border-subtle);
+      border-radius: var(--radius-xs);
+      padding: 2px 6px;
+      font-size: 0.86rem;
+      color: var(--lime-bright);
+    }
+    .editor-content-area pre {
+      padding: 0.9rem;
+      border-radius: var(--radius-sm);
+      overflow-x: auto;
+      margin: 1rem 0;
+    }
+    .editor-content-area pre code {
+      padding: 0;
+      border: none;
+      background: transparent;
+    }
+    .editor-content-area a {
+      color: var(--lime-primary);
+      text-decoration: underline;
+      text-underline-offset: 3px;
+    }
+
+    /* Interactive Checklists */
+    .task-item {
+      display: flex;
+      align-items: flex-start;
+      gap: 9px;
+      margin: 6px 0;
+      user-select: none;
+    }
+
+    .task-checkbox {
+      appearance: none;
+      width: 18px;
+      height: 18px;
+      border: 2px solid var(--lime-primary);
+      border-radius: 5px;
+      background: transparent;
+      cursor: pointer;
+      display: inline-grid;
+      place-content: center;
+      margin-top: 4px;
+      transition: var(--transition-fast);
+      flex-shrink: 0;
+    }
+
+    .task-checkbox:checked {
+      background: var(--lime-primary);
+    }
+
+    .task-checkbox:checked::before {
+      content: "";
+      width: 9px;
+      height: 5px;
+      border-left: 2px solid var(--text-inverse);
+      border-bottom: 2px solid var(--text-inverse);
+      transform: rotate(-45deg) translate(1px, -1px);
+    }
+
+    .task-text {
+      flex: 1;
+      outline: none;
+    }
+
+    .task-item.completed .task-text {
+      text-decoration: line-through;
+      color: var(--text-tertiary);
+    }
+
+    /* Child Notes Section */
+    .subnotes-section {
+      margin-top: 2.75rem;
+      padding-top: 1.5rem;
+      border-top: 1px solid var(--border-subtle);
+    }
+
+    .subnotes-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 0.9rem;
+    }
+
+    .subnotes-title {
+      font-size: 0.92rem;
+      font-weight: 700;
+      color: var(--text-main);
+      display: flex;
+      align-items: center;
+      gap: 7px;
+    }
+
+    .subnotes-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+      gap: 0.75rem;
+    }
+
+    .subnote-card {
+      background: var(--bg-surface);
+      border: 1px solid var(--border-subtle);
+      border-radius: var(--radius-sm);
+      padding: 0.85rem;
+      cursor: pointer;
+      transition: all var(--transition-fast);
+      display: flex;
+      flex-direction: column;
+      gap: 5px;
+    }
+
+    .subnote-card:hover {
+      background: var(--bg-surface-elevated);
+      border-color: var(--lime-border);
+      transform: translateY(-2px);
+    }
+
+    .subnote-card-title {
+      font-size: 0.85rem;
+      font-weight: 600;
+      color: var(--text-main);
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .subnote-card-date {
+      font-size: 0.68rem;
+      color: var(--text-tertiary);
+    }
+
+    /* Media Attachments */
+    .media-attachments-section {
+      margin-top: 2rem;
+      display: flex;
+      flex-direction: column;
+      gap: 1.5rem;
+    }
+
+    .media-item-card {
+      background: var(--bg-surface);
+      border: 1px solid var(--border-subtle);
+      border-radius: var(--radius-md);
+      overflow: hidden;
+      box-shadow: var(--shadow-sm);
+      position: relative;
+    }
+
+    .media-item-header {
+      padding: 0.6rem 0.9rem;
+      background: var(--bg-surface-elevated);
+      border-bottom: 1px solid var(--border-subtle);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .media-item-title {
+      font-size: 0.8rem;
+      font-weight: 600;
+      color: var(--text-main);
+      display: flex;
+      align-items: center;
+      gap: 7px;
+    }
+
+    .media-item-controls {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+    }
+
+    .media-viewer-stage {
+      position: relative;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      background: #000;
+      min-height: 200px;
+      overflow: hidden;
+    }
+
+    .media-img-element {
+      max-width: 100%;
+      height: auto;
+      display: block;
+      user-select: none;
+    }
+
+    /* PDF Controls & Viewer */
+    .pdf-controls-bar {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 0.75rem;
+      padding: 7px;
+      background: var(--bg-surface);
+      border-top: 1px solid var(--border-subtle);
+    }
+
+    .pdf-page-display {
+      font-size: 0.78rem;
+      font-weight: 600;
+      color: var(--text-secondary);
+    }
+
+    /* Rendered Annotations Overlay */
+    .annotations-display-layer {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      pointer-events: none;
+    }
+
+    .rendered-text-box {
+      position: absolute;
+      background: rgba(11, 24, 12, 0.88);
+      border: 1px solid var(--lime-primary);
+      color: var(--lime-pale);
+      padding: 3px 7px;
+      border-radius: 4px;
+      font-size: 0.78rem;
+      font-weight: 600;
+      box-shadow: var(--shadow-sm);
+    }
+
+    /* Visual Annotation Modal */
+    .annotation-modal {
+      position: fixed;
+      inset: 0;
+      background: rgba(5, 10, 6, 0.95);
+      backdrop-filter: blur(14px);
+      z-index: 2000;
+      display: none;
+      flex-direction: column;
+    }
+
+    .annotation-modal.active {
+      display: flex;
+    }
+
+    .annotation-top-bar {
+      height: 56px;
+      background: var(--bg-surface);
+      border-bottom: 1px solid var(--border-subtle);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 1.25rem;
+    }
+
+    .annotation-badge {
+      background: var(--lime-primary);
+      color: var(--text-inverse);
+      font-weight: 700;
+      font-size: 0.75rem;
+      padding: 3px 10px;
+      border-radius: var(--radius-pill);
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .annotation-tools-dock {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      background: var(--bg-deep);
+      border: 1px solid var(--border-subtle);
+      border-radius: var(--radius-pill);
+      padding: 3px 10px;
+    }
+
+    .tool-opt-btn {
+      background: transparent;
+      border: none;
+      color: var(--text-secondary);
+      padding: 5px 10px;
+      border-radius: var(--radius-pill);
+      font-size: 0.78rem;
+      font-weight: 600;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 5px;
+      transition: var(--transition-fast);
+    }
+
+    .tool-opt-btn:hover {
+      color: var(--text-main);
+      background: rgba(255, 255, 255, 0.08);
+    }
+
+    .tool-opt-btn.active {
+      background: var(--lime-primary);
+      color: var(--text-inverse);
+    }
+
+    .annotation-stage-canvas-wrap {
+      flex: 1;
+      position: relative;
+      overflow: auto;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 1rem;
+    }
+
+    .annotation-canvas-board {
+      position: relative;
+      box-shadow: var(--shadow-lg);
+      border-radius: var(--radius-sm);
+      overflow: hidden;
+      user-select: none;
+    }
+
+    .annotation-base-img {
+      display: block;
+      max-width: 80vw;
+      max-height: 70vh;
+    }
+
+    .annotation-draw-canvas {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      touch-action: none;
+      cursor: crosshair;
+    }
+
+    /* Draggable Text Box inside Annotation Mode */
+    .draggable-text-box {
+      position: absolute;
+      background: rgba(14, 28, 16, 0.94);
+      border: 2px solid var(--lime-primary);
+      border-radius: 6px;
+      padding: 3px 6px;
+      color: var(--text-main);
+      font-size: 0.82rem;
+      font-weight: 600;
+      min-width: 80px;
+      cursor: move;
+      box-shadow: var(--shadow-md);
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      z-index: 10;
+    }
+
+    .draggable-text-box input {
+      background: transparent;
+      border: none;
+      color: var(--lime-pale);
+      outline: none;
+      font-size: inherit;
+      font-weight: inherit;
+      width: 100%;
+    }
+
+    .draggable-text-del-btn {
+      background: transparent;
+      border: none;
+      color: var(--danger);
+      cursor: pointer;
+      font-size: 0.82rem;
+      padding: 0 2px;
+    }
+
+    /* Zen Focus Mode */
+    body.zen-focus-mode .sidebar {
+      display: none !important;
+    }
+    body.zen-focus-mode .notes-column {
+      display: none !important;
+    }
+    body.zen-focus-mode .editor-scroll-area {
+      padding: 3rem 20% 5rem 20%;
+    }
+
+    /* Mobile Phone Shell & Screens */
+    .mobile-phone-shell {
+      display: none;
+      padding: 1.5rem;
+      align-items: center;
+      justify-content: center;
+      width: 100%;
+    }
+
+    .phone-mockup-frame {
+      width: 395px;
+      height: 825px;
+      background: #000;
+      border-radius: 52px;
+      border: 10px solid #202b22;
+      box-shadow: 0 25px 65px rgba(0, 0, 0, 0.85), 0 0 0 2px rgba(184, 246, 39, 0.2);
+      display: flex;
+      flex-direction: column;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .phone-dynamic-island {
+      position: absolute;
+      top: 10px;
+      left: 50%;
+      transform: translateX(-50%);
+      width: 110px;
+      height: 28px;
+      background: #000;
+      border-radius: 20px;
+      z-index: 500;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 10px;
+    }
+
+    .island-camera {
+      width: 11px;
+      height: 11px;
+      background: #111a12;
+      border-radius: 50%;
+      border: 1px solid #223;
+    }
+
+    .phone-status-bar {
+      height: 42px;
+      display: flex;
+      align-items: flex-end;
+      justify-content: space-between;
+      padding: 0 1.5rem 6px 1.5rem;
+      font-size: 0.76rem;
+      font-weight: 700;
+      color: var(--text-main);
+      background: transparent;
+      z-index: 400;
+    }
+
+    .mobile-app-screen {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      background: var(--bg-deep);
+      position: relative;
+      overflow: hidden;
+    }
+
+    .mobile-sub-screen {
+      flex: 1;
+      display: none;
+      flex-direction: column;
+      overflow-y: auto;
+      padding: 0.9rem 1.1rem 85px 1.1rem;
+    }
+
+    .mobile-sub-screen.active {
+      display: flex;
+    }
+
+    /* Mobile Bottom Dock (from reference UI images) */
+    .mobile-bottom-dock {
+      position: absolute;
+      bottom: 16px;
+      left: 16px;
+      right: 16px;
+      height: 62px;
+      background: rgba(19, 34, 23, 0.94);
+      backdrop-filter: blur(16px);
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      border-radius: 40px;
+      display: flex;
+      align-items: center;
+      justify-content: space-around;
+      padding: 0 10px;
+      box-shadow: 0 12px 30px rgba(0, 0, 0, 0.6);
+      z-index: 100;
+    }
+
+    .mobile-dock-btn {
+      background: transparent;
+      border: none;
+      color: var(--text-secondary);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 2px;
+      font-size: 0.65rem;
+      font-weight: 600;
+      cursor: pointer;
+      padding: 5px 10px;
+      border-radius: var(--radius-pill);
+      transition: all var(--transition-fast);
+    }
+
+    .mobile-dock-btn.active {
+      color: var(--lime-primary);
+    }
+
+    .mobile-dock-btn.active .dock-icon-wrap {
+      background: var(--lime-muted);
+      color: var(--lime-primary);
+      border-radius: 50%;
+      padding: 3px;
+    }
+
+    .mobile-fab-btn {
+      width: 48px;
+      height: 48px;
+      background: var(--lime-primary);
+      color: var(--text-inverse);
+      border-radius: 50%;
+      border: none;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      box-shadow: 0 8px 24px var(--lime-glow);
+      cursor: pointer;
+      font-size: 1.4rem;
+      font-weight: 700;
+      transition: transform var(--transition-fast);
+      margin-top: -14px;
+    }
+
+    .mobile-fab-btn:active {
+      transform: scale(0.92);
+    }
+
+    /* Modals & Dialogs */
+    .modal-backdrop {
+      position: fixed;
+      inset: 0;
+      background: rgba(5, 10, 6, 0.85);
+      backdrop-filter: blur(8px);
+      z-index: 3000;
+      display: none;
+      align-items: center;
+      justify-content: center;
+      padding: 1.5rem;
+    }
+
+    .modal-backdrop.active {
+      display: flex;
+    }
+
+    .modal-window {
+      background: var(--bg-surface);
+      border: 1px solid var(--border-medium);
+      border-radius: var(--radius-lg);
+      width: 100%;
+      max-width: 520px;
+      max-height: 85vh;
+      display: flex;
+      flex-direction: column;
+      box-shadow: var(--shadow-lg);
+      overflow: hidden;
+      animation: modalEnter 0.2s ease-out;
+    }
+
+    @keyframes modalEnter {
+      from { opacity: 0; transform: scale(0.96) translateY(8px); }
+      to { opacity: 1; transform: scale(1) translateY(0); }
+    }
+
+    .modal-header {
+      padding: 1.1rem 1.4rem;
+      border-bottom: 1px solid var(--border-subtle);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .modal-title {
+      font-size: 1.05rem;
+      font-weight: 700;
+      color: var(--text-main);
+    }
+
+    .modal-body {
+      padding: 1.4rem;
+      overflow-y: auto;
+      flex: 1;
+    }
+
+    .modal-footer {
+      padding: 0.9rem 1.4rem;
+      border-top: 1px solid var(--border-subtle);
+      display: flex;
+      align-items: center;
+      justify-content: flex-end;
+      gap: 0.65rem;
+      background: var(--bg-surface-elevated);
+    }
+
+    /* Toast Container */
+    .toast-container {
+      position: fixed;
+      bottom: 24px;
+      right: 24px;
+      z-index: 9999;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      pointer-events: none;
+    }
+
+    .toast-pill {
+      background: var(--bg-surface-elevated);
+      border: 1px solid var(--lime-border);
+      color: var(--text-main);
+      padding: 9px 16px;
+      border-radius: var(--radius-pill);
+      font-size: 0.82rem;
+      font-weight: 600;
+      box-shadow: var(--shadow-md);
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      animation: toastSlide 0.3s ease-out;
+      pointer-events: auto;
+    }
+
+    @keyframes toastSlide {
+      from { opacity: 0; transform: translateY(16px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    /* Design System Showcase & Conflict Diff */
+    .ds-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(110px, 1fr));
+      gap: 8px;
+      margin-top: 8px;
+    }
+
+    .ds-swatch {
+      height: 56px;
+      border-radius: var(--radius-sm);
+      display: flex;
+      align-items: flex-end;
+      padding: 6px;
+      font-size: 0.68rem;
+      font-weight: 700;
+      border: 1px solid var(--border-subtle);
+    }
+
+    .diff-container {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px;
+      margin: 1rem 0;
+    }
+
+    .diff-card {
+      background: var(--bg-deep);
+      border: 1px solid var(--border-subtle);
+      border-radius: var(--radius-sm);
+      padding: 10px;
+    }
+
+    .diff-card-header {
+      font-size: 0.78rem;
+      font-weight: 700;
+      color: var(--lime-primary);
+      margin-bottom: 6px;
+      display: flex;
+      align-items: center;
+      gap: 5px;
+    }
+
+    .diff-text {
+      font-size: 0.8rem;
+      color: var(--text-secondary);
+      line-height: 1.45;
+    }
+
+    /* Responsive queries */
+    @media (max-width: 900px) {
+      body:not(.forced-desktop) .sidebar {
+        width: 0;
+        opacity: 0;
+        border-right: none;
+      }
+    }
+
+    @media (max-width: 768px) {
+      body:not(.forced-desktop) .desktop-view {
+        display: none !important;
+      }
+      body:not(.forced-desktop) .mobile-phone-shell {
+        display: flex !important;
+        padding: 0;
+        height: calc(100vh - var(--header-height));
+      }
+      body:not(.forced-desktop) .phone-mockup-frame {
+        width: 100% !important;
+        height: 100% !important;
+        border: none !important;
+        border-radius: 0 !important;
+      }
+      body:not(.forced-desktop) .phone-dynamic-island {
+        display: none !important;
+      }
+      body:not(.forced-desktop) .phone-status-bar {
+        display: none !important;
+      }
+    }
+  </style>
+</head>
+<body>
+  <!-- Top Navigation & Preview Switcher Bar -->
+  <header class="top-nav-bar">
+    <div class="brand-section">
+      <div class="brand-icon">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M12 2L2 7l10 5 10-5-10-5z"></path>
+          <path d="M2 17l10 5 10-5"></path>
+          <path d="M2 12l10 5 10-5"></path>
+        </svg>
+      </div>
+      <div class="brand-title">
+        Smart Notes
+        <span class="brand-badge">Prototype</span>
+      </div>
+    </div>
+
+    <!-- Device Switcher -->
+    <div class="device-switcher-dock">
+      <button class="switch-btn active" id="btnSwitchDesktop" onclick="setAppViewMode('desktop')">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2" ry="2"></rect><line x1="8" y1="21" x2="16" y2="21"></line><line x1="12" y1="17" x2="12" y2="21"></line></svg>
+        Desktop
+      </button>
+      <button class="switch-btn" id="btnSwitchMobile" onclick="setAppViewMode('mobile')">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="2" width="14" height="20" rx="2" ry="2"></rect><line x1="12" y1="18" x2="12.01" y2="18"></line></svg>
+        Mobile Preview
+      </button>
+      <button class="switch-btn" id="btnSwitchAuto" onclick="setAppViewMode('auto')">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 3 21 3 21 9"></polyline><polyline points="9 21 3 21 3 15"></polyline><line x1="21" y1="3" x2="14" y2="10"></line><line x1="3" y1="21" x2="10" y2="14"></line></svg>
+        Auto
+      </button>
+    </div>
+
+    <!-- Top Right Actions -->
+    <div class="top-actions">
+      <!-- Zen Writing Mode Toggle -->
+      <button class="btn btn-icon" id="btnZenFocus" onclick="toggleZenFocusMode()" title="Toggle Zen Focus Writing Mode">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><circle cx="12" cy="12" r="4"></circle><line x1="4.93" y1="4.93" x2="9.17" y2="9.17"></line><line x1="14.83" y1="14.83" x2="19.07" y2="19.07"></line><line x1="14.83" y1="9.17" x2="19.07" y2="4.93"></line><line x1="4.93" y1="19.07" x2="9.17" y2="14.83"></line></svg>
+      </button>
+
+      <!-- Sync Status Pill -->
+      <div class="sync-status-pill" onclick="openSyncModal()" title="View Offline & Planned Sync Info">
+        <span class="pulse-dot"></span>
+        <span id="topSyncStatusText">Saved on device</span>
+      </div>
+
+      <!-- Export All Action -->
+      <button class="btn btn-primary" onclick="exportAllAsZip()" title="Export all folders and notes as real ZIP">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
+        Export ZIP
+      </button>
+
+      <!-- Settings / Design System Button -->
+      <button class="btn btn-icon" onclick="openSettingsModal()" title="Settings & Design System">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>
+      </button>
+    </div>
+  </header>
+
+  <!-- Main Viewport -->
+  <main class="app-viewport">
+    <!-- ========================================== -->
+    <!-- 1. DESKTOP VIEW (3-Column Layout)          -->
+    <!-- ========================================== -->
+    <div class="desktop-view" id="desktopViewContainer">
+      <!-- Left Column: Folders & System Tree -->
+      <aside class="sidebar" id="desktopSidebar">
+        <div class="sidebar-header">
+          <span class="sidebar-title">Library</span>
+          <div style="display:flex; gap:4px;">
+            <button class="btn btn-icon btn-sm" onclick="promptCreateFolder()" title="New Folder">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path><line x1="12" y1="11" x2="12" y2="17"></line><line x1="9" y1="14" x2="15" y2="14"></line></svg>
+            </button>
+            <button class="btn btn-icon btn-sm" onclick="createNewNote(null)" title="New Root Note">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+            </button>
+          </div>
+        </div>
+
+        <div class="sidebar-scroll">
+          <div class="nav-link active" id="navAllNotes" onclick="setDesktopFolderFilter(null)">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><polyline points="10 9 9 9 8 9"></polyline></svg>
+            All Notes
+            <span class="badge-count" id="countAllNotes">0</span>
+          </div>
+          <div class="nav-link" id="navPinnedNotes" onclick="setDesktopSpecialFilter('pinned')">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon></svg>
+            Pinned
+            <span class="badge-count" id="countPinnedNotes">0</span>
+          </div>
+          <div class="nav-link" id="navRecentNotes" onclick="setDesktopSpecialFilter('recent')">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>
+            Recent
+            <span class="badge-count" id="countRecentNotes">0</span>
+          </div>
+
+          <!-- Unlimited Tree Container -->
+          <div class="tree-container">
+            <div class="tree-header-row">
+              <span class="tree-header-label">Organization Tree</span>
+              <button class="tree-action-btn" onclick="promptCreateFolder()" title="Add Top-Level Folder">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+              </button>
+            </div>
+            <div id="desktopTreeContainer">
+              <!-- Rendered dynamically -->
+            </div>
+          </div>
+        </div>
+
+        <div class="sidebar-footer">
+          <span id="storageStatsText">Local DB: 0 items</span>
+          <button class="btn btn-sm" onclick="resetToSampleData()" title="Restore Sample Data">Reset</button>
+        </div>
+      </aside>
+
+      <!-- Middle Column: Notes List -->
+      <section class="notes-column" id="desktopNotesColumn">
+        <div class="notes-column-header">
+          <div class="column-headline-row">
+            <h2 class="column-title" id="desktopListTitle">All Notes</h2>
+            <button class="btn btn-primary btn-sm" onclick="createNewNote(appState.selectedFolderId)" title="Create New Note in this context">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+              Note
+            </button>
+          </div>
+
+          <!-- Live Search Input -->
+          <div class="search-box">
+            <span class="search-icon-pos">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+            </span>
+            <input type="text" class="search-input" id="desktopSearchInput" placeholder="Search title and body..." oninput="onSearchQueryChange(this.value)">
+            <button class="search-clear-btn" id="desktopSearchClear" onclick="clearSearchQuery()">×</button>
+          </div>
+
+          <!-- Filter Chips -->
+          <div class="notes-filter-chips">
+            <span class="filter-chip active" id="chipAll" onclick="setNoteCardFilter('all')">All</span>
+            <span class="filter-chip" id="chipPinned" onclick="setNoteCardFilter('pinned')">Pinned</span>
+            <span class="filter-chip" id="chipSubnotes" onclick="setNoteCardFilter('subnotes')">Sub-notes</span>
+            <span class="filter-chip" id="chipMedia" onclick="setNoteCardFilter('media')">With Media</span>
+          </div>
+        </div>
+
+        <!-- Note Cards List -->
+        <div class="notes-cards-list" id="desktopNotesCards">
+          <!-- Populated dynamically -->
+        </div>
+      </section>
+
+      <!-- Right Column: Note Editor -->
+      <section class="editor-column" id="desktopEditorColumn">
+        <!-- Editor Header & Breadcrumb -->
+        <div class="editor-header">
+          <nav class="breadcrumb-nav" id="editorBreadcrumb">
+            <!-- Dynamic breadcrumbs -->
+          </nav>
+          <div class="editor-top-actions">
+            <span class="save-indicator" id="editorSaveStatus">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
+              Saved on this device
+            </span>
+            <button class="btn btn-icon btn-sm" id="btnPinCurrentNote" onclick="togglePinCurrentNote()" title="Pin/Unpin Note">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon></svg>
+            </button>
+            <button class="btn btn-icon btn-sm" onclick="duplicateCurrentNote()" title="Duplicate Note">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
+            </button>
+            <button class="btn btn-icon btn-sm" onclick="openMoveModal(appState.selectedNoteId)" title="Move Note to another folder or note">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="5 9 2 12 5 15"></polyline><polyline points="9 5 12 2 15 5"></polyline><polyline points="15 19 12 22 9 19"></polyline><polyline points="19 9 22 12 19 15"></polyline><line x1="2" y1="12" x2="22" y2="12"></line><line x1="12" y1="2" x2="12" y2="22"></line></svg>
+            </button>
+            <button class="btn btn-icon btn-sm" onclick="confirmDeleteCurrentNote()" title="Delete Note" style="color:var(--danger)">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
+            </button>
+          </div>
+        </div>
+
+        <!-- Rich Text Formatting Toolbar -->
+        <div class="rich-toolbar" id="editorToolbar">
+          <!-- Text Headings -->
+          <select class="toolbar-select" id="selectHeading" onchange="formatHeading(this.value)">
+            <option value="p">Paragraph</option>
+            <option value="h1">Heading 1</option>
+            <option value="h2">Heading 2</option>
+            <option value="h3">Heading 3</option>
+          </select>
+
+          <!-- Text Size -->
+          <select class="toolbar-select" id="selectFontSize" onchange="formatFontSize(this.value)">
+            <option value="3">Normal (16px)</option>
+            <option value="2">Small (14px)</option>
+            <option value="4">Large (18px)</option>
+            <option value="5">Extra Large</option>
+          </select>
+
+          <span class="toolbar-sep"></span>
+
+          <!-- Basic Formatting -->
+          <button class="toolbar-btn" onclick="execCmd('bold')" title="Bold (Ctrl+B)"><strong>B</strong></button>
+          <button class="toolbar-btn" onclick="execCmd('italic')" title="Italic (Ctrl+I)"><em>I</em></button>
+          <button class="toolbar-btn" onclick="execCmd('underline')" title="Underline (Ctrl+U)"><u>U</u></button>
+          <button class="toolbar-btn" onclick="execCmd('strikeThrough')" title="Strikethrough"><s>S</s></button>
+
+          <span class="toolbar-sep"></span>
+
+          <!-- Lists & Checklist -->
+          <button class="toolbar-btn" onclick="execCmd('insertUnorderedList')" title="Bullet List">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="8" y1="6" x2="21" y2="6"></line><line x1="8" y1="12" x2="21" y2="12"></line><line x1="8" y1="18" x2="21" y2="18"></line><line x1="3" y1="6" x2="3.01" y2="6"></line><line x1="3" y1="12" x2="3.01" y2="12"></line><line x1="3" y1="18" x2="3.01" y2="18"></line></svg>
+          </button>
+          <button class="toolbar-btn" onclick="execCmd('insertOrderedList')" title="Numbered List">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="10" y1="6" x2="21" y2="6"></line><line x1="10" y1="12" x2="21" y2="12"></line><line x1="10" y1="18" x2="21" y2="18"></line><path d="M4 6h1v4"></path><path d="M4 10h2"></path><path d="M6 18H4c0-1 2-2 2-3s-1-1.5-2-1"></path></svg>
+          </button>
+          <button class="toolbar-btn" onclick="insertChecklistTask()" title="Interactive Checklist">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 11 12 14 22 4"></polyline><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"></path></svg>
+          </button>
+
+          <span class="toolbar-sep"></span>
+
+          <!-- Blockquote & Code -->
+          <button class="toolbar-btn" onclick="formatBlockquote()" title="Blockquote">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 21c3 0 7-1 7-8V5c0-1.25-.756-2.017-2-2H4c-1.25 0-2 .75-2 1.972V11c0 1.25.75 2 2 2 1 0 1 0 1 1v1c0 1-1 2-2 2s-1 .008-1 1.031V20c0 1 0 1 1 1z"></path><path d="M15 21c3 0 7-1 7-8V5c0-1.25-.757-2.017-2-2h-4c-1.25 0-2 .75-2 1.972V11c0 1.25.75 2 2 2 1 0 1 0 1 1v1c0 1-1 2-2 2s-1 .008-1 1.031V20c0 1 0 1 1 1z"></path></svg>
+          </button>
+          <button class="toolbar-btn" onclick="insertCodeSnippet()" title="Code Block">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="16 18 22 12 16 6"></polyline><polyline points="8 6 2 12 8 18"></polyline></svg>
+          </button>
+          <button class="toolbar-btn" onclick="promptInsertLink()" title="Insert Link">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path></svg>
+          </button>
+
+          <span class="toolbar-sep"></span>
+
+          <!-- Text Color Picker -->
+          <div class="color-dropdown-trigger">
+            <button class="toolbar-btn" onclick="toggleColorPalette('text')" title="Text Color">
+              <span style="font-weight:700; color:var(--lime-primary)">A</span>
+            </button>
+            <div class="color-palette-popover" id="popoverTextColor">
+              <button class="color-swatch-opt" style="background:#f5f8f3" onclick="formatTextColor('#f5f8f3')"></button>
+              <button class="color-swatch-opt" style="background:#b8f627" onclick="formatTextColor('#b8f627')"></button>
+              <button class="color-swatch-opt" style="background:#00e676" onclick="formatTextColor('#00e676')"></button>
+              <button class="color-swatch-opt" style="background:#38bdf8" onclick="formatTextColor('#38bdf8')"></button>
+              <button class="color-swatch-opt" style="background:#fbbf24" onclick="formatTextColor('#fbbf24')"></button>
+              <button class="color-swatch-opt" style="background:#f87171" onclick="formatTextColor('#f87171')"></button>
+              <button class="color-swatch-opt" style="background:#e879f9" onclick="formatTextColor('#e879f9')"></button>
+              <button class="color-swatch-opt" style="background:#9cb09f" onclick="formatTextColor('#9cb09f')"></button>
+            </div>
+          </div>
+
+          <!-- Highlight Color Picker -->
+          <div class="color-dropdown-trigger">
+            <button class="toolbar-btn" onclick="toggleColorPalette('highlight')" title="Highlight Color">
+              <span style="background:var(--lime-primary); color:#000; padding:1px 4px; border-radius:3px; font-size:0.75rem; font-weight:700;">H</span>
+            </button>
+            <div class="color-palette-popover" id="popoverHighlightColor">
+              <button class="color-swatch-opt" style="background:rgba(184, 246, 39, 0.45)" onclick="formatHighlightColor('rgba(184, 246, 39, 0.45)')"></button>
+              <button class="color-swatch-opt" style="background:rgba(250, 204, 21, 0.45)" onclick="formatHighlightColor('rgba(250, 204, 21, 0.45)')"></button>
+              <button class="color-swatch-opt" style="background:rgba(52, 211, 153, 0.45)" onclick="formatHighlightColor('rgba(52, 211, 153, 0.45)')"></button>
+              <button class="color-swatch-opt" style="background:rgba(56, 189, 248, 0.45)" onclick="formatHighlightColor('rgba(56, 189, 248, 0.45)')"></button>
+              <button class="color-swatch-opt" style="background:rgba(244, 114, 182, 0.45)" onclick="formatHighlightColor('rgba(244, 114, 182, 0.45)')"></button>
+              <button class="color-swatch-opt" style="background:transparent; border:1px solid #fff" onclick="formatHighlightColor('transparent')" title="Remove Highlight"></button>
+            </div>
+          </div>
+
+          <span class="toolbar-sep"></span>
+
+          <!-- Undo & Redo -->
+          <button class="toolbar-btn" onclick="execCmd('undo')" title="Undo (Ctrl+Z)">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7v6h6"></path><path d="M21 17a9 9 0 0 0-9-9 9 9 0 0 0-6 2.3L3 13"></path></svg>
+          </button>
+          <button class="toolbar-btn" onclick="execCmd('redo')" title="Redo (Ctrl+Y)">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 7v6h-6"></path><path d="M3 17a9 9 0 0 1 9-9 9 9 0 0 1 6 2.3l3 2.7"></path></svg>
+          </button>
+
+          <span class="toolbar-sep"></span>
+
+          <!-- Import Image & PDF buttons -->
+          <button class="btn btn-sm" onclick="triggerImportImage()" title="Import Image (Supports Annotations)">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><circle cx="8.5" cy="8.5" r="1.5"></circle><polyline points="21 15 16 10 5 21"></polyline></svg>
+            Image
+          </button>
+          <button class="btn btn-sm" onclick="triggerImportPDF()" title="Import PDF Document">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="9" y1="15" x2="15" y2="15"></line></svg>
+            PDF
+          </button>
+        </div>
+
+        <!-- Note Scroll Content Area -->
+        <div class="editor-scroll-area" id="editorDropZone">
+          <input type="text" class="editor-title-input" id="editorTitle" placeholder="Untitled Note" oninput="onNoteTitleInput(this.value)">
+
+          <div class="editor-meta-bar" id="editorMetaBar">
+            <span id="metaCreatedDate">Created: —</span>
+            <span id="metaModifiedDate">Modified: —</span>
+            <span id="metaWordCount">0 words</span>
+          </div>
+
+          <!-- Contenteditable Body -->
+          <div class="editor-content-area" id="editorBody" contenteditable="true" oninput="onNoteBodyInput()">
+            <!-- Rich Note Content -->
+          </div>
+
+          <!-- Media Attachments (Images & PDFs) -->
+          <div class="media-attachments-section" id="editorMediaContainer">
+            <!-- Media items rendered here -->
+          </div>
+
+          <!-- Child Notes (Sub-pages) Section -->
+          <div class="subnotes-section" id="editorSubnotesSection">
+            <div class="subnotes-header">
+              <div class="subnotes-title">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="9" y1="18" x2="15" y2="18"></line><line x1="12" y1="15" x2="12" y2="21"></line><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path></svg>
+                Child Notes & Sub-pages
+                <span class="badge-tag" id="subnotesCountBadge">0</span>
+              </div>
+              <button class="btn btn-sm btn-primary" onclick="createChildNoteForCurrent()" title="Create a nested child note">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+                Add Sub-Note
+              </button>
+            </div>
+            <div class="subnotes-grid" id="editorSubnotesGrid">
+              <!-- Sub-note cards -->
+            </div>
+          </div>
+        </div>
+      </section>
+    </div>
+
+    <!-- ========================================== -->
+    <!-- 2. MOBILE PHONE VIEW (Realistic Mockup)    -->
+    <!-- ========================================== -->
+    <div class="mobile-phone-shell" id="mobilePhoneShell">
+      <div class="phone-mockup-frame">
+        <!-- Dynamic Island -->
+        <div class="phone-dynamic-island">
+          <div class="island-camera"></div>
+          <div style="font-size:0.65rem; color:#b8f627; font-weight:700;">Smart Notes</div>
+        </div>
+
+        <!-- Mobile Status Bar -->
+        <div class="phone-status-bar">
+          <span>9:41</span>
+          <div style="display:flex; align-items:center; gap:6px;">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2c5.523 0 10 4.477 10 10s-4.477 10-10 10S2 17.523 2 12 6.477 2 12 2zm0 2a8 8 0 1 0 0 16 8 8 0 0 0 0-16z"></path></svg>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M5 12.55a11 11 0 0 1 14.08 0"></path><path d="M8.53 16.11a6 6 0 0 1 6.95 0"></path><line x1="12" y1="20" x2="12.01" y2="20"></line></svg>
+            <div style="width:18px; height:9px; border:1px solid currentColor; border-radius:3px; padding:1px; display:flex;">
+              <div style="background:#b8f627; width:80%; height:100%; border-radius:1px;"></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Mobile App Core Screen Stack -->
+        <div class="mobile-app-screen">
+          <!-- Mobile Screen 1: Home / Library -->
+          <div class="mobile-sub-screen active" id="mobileScreenLibrary">
+            <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:1rem;">
+              <div>
+                <h1 style="font-size:1.4rem; font-weight:800; color:var(--text-main);">Smart Notes</h1>
+                <p style="font-size:0.75rem; color:var(--text-secondary);">Offline-first personal knowledge</p>
+              </div>
+              <button class="btn btn-icon btn-sm" onclick="promptCreateFolder()" title="New Folder">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path><line x1="12" y1="11" x2="12" y2="17"></line><line x1="9" y1="14" x2="15" y2="14"></line></svg>
+              </button>
+            </div>
+
+            <!-- Stats Banner Card -->
+            <div style="background:var(--bg-surface); border:1px solid var(--border-subtle); border-radius:var(--radius-md); padding:1rem; margin-bottom:1.25rem;">
+              <div style="display:flex; justify-content:space-between; align-items:center;">
+                <div>
+                  <div style="font-size:0.7rem; font-weight:700; color:var(--text-tertiary); text-transform:uppercase;">Storage & Notes</div>
+                  <div style="font-size:1.3rem; font-weight:800; color:var(--lime-primary); margin-top:2px;" id="mobTotalNotesText">0 Notes</div>
+                </div>
+                <div class="badge-tag lime" style="font-size:0.72rem; padding:4px 10px;">100% Local</div>
+              </div>
+            </div>
+
+            <!-- Pinned Notes Section -->
+            <div style="margin-bottom:1.25rem;">
+              <div style="font-size:0.78rem; font-weight:700; color:var(--text-tertiary); text-transform:uppercase; margin-bottom:0.6rem;">Pinned Notes</div>
+              <div style="display:flex; gap:8px; overflow-x:auto; padding-bottom:4px;" id="mobPinnedContainer">
+                <!-- Pinned cards -->
+              </div>
+            </div>
+
+            <!-- Nested Folders List -->
+            <div style="margin-bottom:1.25rem;">
+              <div style="font-size:0.78rem; font-weight:700; color:var(--text-tertiary); text-transform:uppercase; margin-bottom:0.6rem;">Folders</div>
+              <div id="mobFoldersContainer" style="display:flex; flex-direction:column; gap:6px;">
+                <!-- Folders list -->
+              </div>
+            </div>
+
+            <!-- Recent Notes -->
+            <div>
+              <div style="font-size:0.78rem; font-weight:700; color:var(--text-tertiary); text-transform:uppercase; margin-bottom:0.6rem;">Recent Notes</div>
+              <div id="mobRecentContainer" style="display:flex; flex-direction:column; gap:6px;">
+                <!-- Recent cards -->
+              </div>
+            </div>
+          </div>
+
+          <!-- Mobile Screen 2: Folder View -->
+          <div class="mobile-sub-screen" id="mobileScreenFolder">
+            <div style="display:flex; align-items:center; gap:8px; margin-bottom:1rem;">
+              <button class="btn btn-icon btn-sm" onclick="switchMobileScreen('library')">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="15 18 9 12 15 6"></polyline></svg>
+              </button>
+              <h2 style="font-size:1.15rem; font-weight:700;" id="mobFolderTitle">Folder</h2>
+              <button class="btn btn-sm btn-primary" style="margin-left:auto;" onclick="createNewNote(appState.mobileFolderId)">+ Note</button>
+            </div>
+            <div id="mobFolderBreadcrumb" style="font-size:0.75rem; color:var(--text-tertiary); margin-bottom:1rem;"></div>
+            <div id="mobFolderSubfolders" style="display:flex; flex-direction:column; gap:6px; margin-bottom:1rem;"></div>
+            <div id="mobFolderNotes" style="display:flex; flex-direction:column; gap:6px;"></div>
+          </div>
+
+          <!-- Mobile Screen 3: Note Editor -->
+          <div class="mobile-sub-screen" id="mobileScreenEditor" style="padding-top:0.5rem;">
+            <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:0.75rem;">
+              <button class="btn btn-icon btn-sm" onclick="backFromMobileEditor()">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="15 18 9 12 15 6"></polyline></svg>
+              </button>
+              <span class="save-indicator" id="mobSaveStatus" style="font-size:0.7rem;">Saved</span>
+              <div style="display:flex; gap:4px;">
+                <button class="btn btn-icon btn-sm" onclick="triggerImportImage()" title="Import Image">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><circle cx="8.5" cy="8.5" r="1.5"></circle><polyline points="21 15 16 10 5 21"></polyline></svg>
+                </button>
+                <button class="btn btn-icon btn-sm" onclick="triggerImportPDF()" title="Import PDF">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path></svg>
+                </button>
+              </div>
+            </div>
+
+            <!-- Mobile Formatting Bar -->
+            <div style="display:flex; gap:4px; overflow-x:auto; padding:4px 0; margin-bottom:0.75rem; border-bottom:1px solid var(--border-subtle);">
+              <button class="toolbar-btn" onclick="execCmd('bold')"><strong>B</strong></button>
+              <button class="toolbar-btn" onclick="execCmd('italic')"><em>I</em></button>
+              <button class="toolbar-btn" onclick="execCmd('underline')"><u>U</u></button>
+              <button class="toolbar-btn" onclick="insertChecklistTask()">?</button>
+              <button class="toolbar-btn" onclick="execCmd('insertUnorderedList')">•</button>
+              <button class="toolbar-btn" onclick="formatHeading('h2')">H2</button>
+              <button class="toolbar-btn" onclick="formatBlockquote()">"</button>
+            </div>
+
+            <!-- Title & Body -->
+            <input type="text" class="editor-title-input" id="mobEditorTitle" placeholder="Untitled Note" oninput="onNoteTitleInput(this.value)" style="font-size:1.5rem;">
+            <div class="editor-content-area" id="mobEditorBody" contenteditable="true" oninput="onNoteBodyInput()" style="font-size:0.95rem; min-height:180px;"></div>
+
+            <!-- Mobile Media Attachments & Subnotes -->
+            <div class="media-attachments-section" id="mobEditorMedia"></div>
+            <div class="subnotes-section" id="mobEditorSubnotes" style="margin-top:1.5rem;">
+              <div class="subnotes-header">
+                <div class="subnotes-title" style="font-size:0.85rem;">Sub-notes</div>
+                <button class="btn btn-sm btn-primary" onclick="createChildNoteForCurrent()">+ Sub-Note</button>
+              </div>
+              <div id="mobSubnotesList" style="display:flex; flex-direction:column; gap:6px;"></div>
+            </div>
+          </div>
+
+          <!-- Mobile Screen 4: Search -->
+          <div class="mobile-sub-screen" id="mobileScreenSearch">
+            <h2 style="font-size:1.25rem; font-weight:800; margin-bottom:0.75rem;">Search Notes</h2>
+            <div class="search-box" style="margin-bottom:1rem;">
+              <span class="search-icon-pos">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+              </span>
+              <input type="text" class="search-input" id="mobSearchInput" placeholder="Search by title or body..." oninput="onMobileSearchInput(this.value)">
+            </div>
+            <div id="mobSearchResults" style="display:flex; flex-direction:column; gap:6px;">
+              <!-- Search cards -->
+            </div>
+          </div>
+
+          <!-- Mobile Screen 5: Settings & Sync -->
+          <div class="mobile-sub-screen" id="mobileScreenSettings">
+            <h2 style="font-size:1.25rem; font-weight:800; margin-bottom:1rem;">Settings & Sync</h2>
+            
+            <!-- Sync Card -->
+            <div style="background:var(--bg-surface); border:1px solid var(--border-subtle); border-radius:var(--radius-md); padding:1rem; margin-bottom:1rem;">
+              <div style="display:flex; align-items:center; gap:8px; margin-bottom:6px;">
+                <span class="pulse-dot"></span>
+                <span style="font-size:0.85rem; font-weight:700; color:var(--lime-primary);">Local-First Storage Active</span>
+              </div>
+              <p style="font-size:0.75rem; color:var(--text-secondary); line-height:1.4; margin-bottom:10px;">
+                All notes and documents are securely saved to IndexedDB on this device.
+              </p>
+              <button class="btn btn-sm btn-primary" onclick="openConflictModal()" style="width:100%; justify-content:center;">
+                ⚡ Demo Conflict Resolver
+              </button>
+            </div>
+
+            <!-- Export / Backup -->
+            <div style="background:var(--bg-surface); border:1px solid var(--border-subtle); border-radius:var(--radius-md); padding:1rem; margin-bottom:1rem;">
+              <div style="font-size:0.85rem; font-weight:700; margin-bottom:6px;">Export & Backup</div>
+              <div style="display:flex; flex-direction:column; gap:6px;">
+                <button class="btn btn-sm" onclick="exportAllAsZip()" style="justify-content:center;">
+                  📦 Export Complete Library (ZIP)
+                </button>
+                <button class="btn btn-sm" onclick="triggerRestoreBackup()" style="justify-content:center;">
+                  📥 Restore from Backup
+                </button>
+              </div>
+            </div>
+
+            <!-- Design System Button -->
+            <button class="btn btn-sm" onclick="openSettingsModal()" style="width:100%; justify-content:center; margin-bottom:1rem;">
+              🎨 View Design System & Palette
+            </button>
+
+            <!-- Reset Data -->
+            <button class="btn btn-sm" onclick="resetToSampleData()" style="width:100%; justify-content:center; color:var(--text-tertiary);">
+              Reset Sample Data
+            </button>
+          </div>
+
+          <!-- Mobile Bottom Navigation Dock (Pill format from visual references) -->
+          <nav class="mobile-bottom-dock">
+            <button class="mobile-dock-btn active" id="mobDockLibrary" onclick="switchMobileScreen('library')">
+              <span class="dock-icon-wrap">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"></path><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"></path></svg>
+              </span>
+              Library
+            </button>
+
+            <button class="mobile-dock-btn" id="mobDockSearch" onclick="switchMobileScreen('search')">
+              <span class="dock-icon-wrap">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+              </span>
+              Search
+            </button>
+
+            <!-- Center Floating Action Button (+) -->
+            <button class="mobile-fab-btn" onclick="createNewNote(appState.mobileFolderId || null)" title="Create New Note">
+              +
+            </button>
+
+            <button class="mobile-dock-btn" id="mobDockRecent" onclick="switchMobileScreen('recent')">
+              <span class="dock-icon-wrap">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>
+              </span>
+              Recent
+            </button>
+
+            <button class="mobile-dock-btn" id="mobDockSettings" onclick="switchMobileScreen('settings')">
+              <span class="dock-icon-wrap">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>
+              </span>
+              Settings
+            </button>
+          </nav>
+        </div>
+      </div>
+    </div>
+  </main>
+
+  <!-- ========================================== -->
+  <!-- 3. VISUAL ANNOTATION OVERLAY MODAL         -->
+  <!-- ========================================== -->
+  <div class="annotation-modal" id="annotationModal">
+    <div class="annotation-top-bar">
+      <div style="display:flex; align-items:center; gap:12px;">
+        <span class="annotation-badge">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 20h9"></path><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"></path></svg>
+          Visual Annotation Mode
+        </span>
+        <span style="font-size:0.8rem; color:var(--text-secondary);" id="annotationMediaTitle">Document</span>
+      </div>
+
+      <!-- Annotation Tools Dock -->
+      <div class="annotation-tools-dock">
+        <button class="tool-opt-btn active" id="toolBtnPen" onclick="setAnnotationTool('pen')">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20h9"></path><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"></path></svg>
+          Pen
+        </button>
+        <button class="tool-opt-btn" id="toolBtnText" onclick="setAnnotationTool('text')">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="4 7 4 4 20 4 20 7"></polyline><line x1="9" y1="20" x2="15" y2="20"></line><line x1="12" y1="4" x2="12" y2="20"></line></svg>
+          + Text Note
+        </button>
+        <button class="tool-opt-btn" onclick="undoAnnotationPath()" title="Undo Last Stroke">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 7v6h6"></path><path d="M21 17a9 9 0 0 0-9-9 9 9 0 0 0-6 2.3L3 13"></path></svg>
+        </button>
+        <button class="tool-opt-btn" onclick="clearAnnotationCanvas()" style="color:var(--danger);" title="Clear Drawings">
+          Clear
+        </button>
+      </div>
+
+      <!-- Finish Actions -->
+      <div style="display:flex; align-items:center; gap:8px;">
+        <button class="btn" onclick="cancelAnnotation()">Discard</button>
+        <button class="btn btn-primary" onclick="saveAnnotationChanges()">Save Annotations</button>
+      </div>
+    </div>
+
+    <!-- Canvas Stage -->
+    <div class="annotation-stage-canvas-wrap" id="annotationStageWrap">
+      <div class="annotation-canvas-board" id="annotationBoard">
+        <img id="annotationBaseImg" class="annotation-base-img" src="" alt="Annotation Target">
+        <canvas id="annotationDrawCanvas" class="annotation-draw-canvas"></canvas>
+        <div id="annotationTextBoxesLayer"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ========================================== -->
+  <!-- 4. MOVE ITEM (FOLDER / NOTE) MODAL         -->
+  <!-- ========================================== -->
+  <div class="modal-backdrop" id="modalMoveItem">
+    <div class="modal-window">
+      <div class="modal-header">
+        <h3 class="modal-title">Move Item</h3>
+        <button class="btn btn-icon btn-sm" onclick="closeModal('modalMoveItem')">×</button>
+      </div>
+      <div class="modal-body">
+        <p style="font-size:0.83rem; color:var(--text-secondary); margin-bottom:1rem;">
+          Select a destination folder or parent note. Smart Notes supports unlimited nested folders and notes inside notes.
+        </p>
+        <div id="moveTreeOptions" style="max-height:280px; overflow-y:auto; border:1px solid var(--border-subtle); border-radius:var(--radius-sm); padding:8px;">
+          <!-- Destination items tree -->
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn" onclick="closeModal('modalMoveItem')">Cancel</button>
+        <button class="btn btn-primary" onclick="executeMoveItem()">Move Here</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ========================================== -->
+  <!-- 5. SYNC & CLOUD ARCHITECTURE MODAL         -->
+  <!-- ========================================== -->
+  <div class="modal-backdrop" id="modalSyncInfo">
+    <div class="modal-window">
+      <div class="modal-header">
+        <h3 class="modal-title">Sync & Offline Architecture</h3>
+        <button class="btn btn-icon btn-sm" onclick="closeModal('modalSyncInfo')">×</button>
+      </div>
+      <div class="modal-body">
+        <div style="background:var(--lime-muted); border:1px solid var(--lime-border); border-radius:var(--radius-sm); padding:10px 14px; margin-bottom:1rem;">
+          <div style="font-size:0.75rem; font-weight:800; color:var(--lime-primary); text-transform:uppercase;">
+            Preview / Planned Feature
+          </div>
+          <div style="font-size:0.8rem; color:var(--lime-pale); margin-top:2px;">
+            Cross-device cloud synchronization will activate in the production build with secure accounts. Currently operating 100% offline on this device via IndexedDB.
+          </div>
+        </div>
+
+        <h4 style="font-size:0.9rem; font-weight:700; margin-bottom:6px;">Planned Production Behavior</h4>
+        <ul style="font-size:0.82rem; color:var(--text-secondary); line-height:1.6; margin-left:1.2rem; margin-bottom:1rem;">
+          <li><strong>Local-First Guarantee:</strong> Every edit is written to on-device SQLite (Android) and IndexedDB (Web) before any network call.</li>
+          <li><strong>Zero-Loss Offline Mode:</strong> Works seamlessly on airplanes, subways, or offline environments.</li>
+          <li><strong>CRDT Auto-Merge:</strong> Concurrent edits on mobile and desktop auto-converge cleanly.</li>
+          <li><strong>End-to-End Encryption:</strong> Notes encrypted with device keys; server cannot read your thoughts.</li>
+        </ul>
+
+        <div style="background:var(--bg-deep); border:1px solid var(--border-subtle); border-radius:var(--radius-sm); padding:12px;">
+          <div style="font-size:0.8rem; font-weight:700; color:var(--text-main); margin-bottom:4px;">Test Conflict Resolution UI</div>
+          <p style="font-size:0.78rem; color:var(--text-tertiary); margin-bottom:8px;">
+            See how Smart Notes lets users resolve two conflicting offline edits between a phone and a laptop.
+          </p>
+          <button class="btn btn-sm btn-primary" onclick="openConflictModal()">Launch Conflict Resolver Demo</button>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-primary" onclick="closeModal('modalSyncInfo')">Got It</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ========================================== -->
+  <!-- 6. CONFLICT RESOLUTION SIMULATOR MODAL     -->
+  <!-- ========================================== -->
+  <div class="modal-backdrop" id="modalConflict">
+    <div class="modal-window" style="max-width:620px;">
+      <div class="modal-header">
+        <div>
+          <h3 class="modal-title" style="color:var(--warning)">⚡ Sync Conflict Detected</h3>
+          <span style="font-size:0.7rem; color:var(--text-tertiary);">Production Prototype Preview</span>
+        </div>
+        <button class="btn btn-icon btn-sm" onclick="closeModal('modalConflict')">×</button>
+      </div>
+      <div class="modal-body">
+        <p style="font-size:0.83rem; color:var(--text-secondary); margin-bottom:0.75rem;">
+          Two devices modified <strong>"Offline-First Sync Engine Spec"</strong> while offline. Choose which version to preserve:
+        </p>
+
+        <div class="diff-container">
+          <div class="diff-card">
+            <div class="diff-card-header">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="5" y="2" width="14" height="20" rx="2" ry="2"></rect></svg>
+              Pixel 9 Pro (This Device)
+            </div>
+            <div class="diff-text">
+              "Local autonomy with immediate SQLite commit. Lamport clocks ensure deterministic sequence numbering across mobile nodes."
+            </div>
+          </div>
+
+          <div class="diff-card">
+            <div class="diff-card-header" style="color:var(--info)">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="3" width="20" height="14" rx="2" ry="2"></rect></svg>
+              MacBook Pro M3 (Cloud Copy)
+            </div>
+            <div class="diff-text">
+              "Local autonomy with IndexedDB backend. CRDT vector clocks resolve concurrent document forks with zero data loss."
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-sm" onclick="resolveConflictDemo('mine')">Keep This Device</button>
+        <button class="btn btn-sm" onclick="resolveConflictDemo('theirs')">Keep Cloud Copy</button>
+        <button class="btn btn-sm btn-primary" onclick="resolveConflictDemo('merge')">Merge Both (Append)</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ========================================== -->
+  <!-- 7. SETTINGS & DESIGN SYSTEM MODAL          -->
+  <!-- ========================================== -->
+  <div class="modal-backdrop" id="modalSettings">
+    <div class="modal-window" style="max-width:640px;">
+      <div class="modal-header">
+        <h3 class="modal-title">Settings & Design System</h3>
+        <button class="btn btn-icon btn-sm" onclick="closeModal('modalSettings')">×</button>
+      </div>
+      <div class="modal-body">
+        <!-- Telemetry -->
+        <div style="background:var(--bg-deep); border:1px solid var(--border-subtle); border-radius:var(--radius-sm); padding:12px; margin-bottom:1.5rem;">
+          <div style="font-size:0.75rem; font-weight:700; color:var(--text-tertiary); text-transform:uppercase; margin-bottom:6px;">Storage Telemetry</div>
+          <div style="display:grid; grid-template-columns:repeat(4, 1fr); gap:8px; text-align:center;">
+            <div><div style="font-size:1.1rem; font-weight:800; color:var(--lime-primary);" id="statNotesCount">0</div><div style="font-size:0.68rem; color:var(--text-tertiary);">Notes</div></div>
+            <div><div style="font-size:1.1rem; font-weight:800; color:var(--lime-primary);" id="statFoldersCount">0</div><div style="font-size:0.68rem; color:var(--text-tertiary);">Folders</div></div>
+            <div><div style="font-size:1.1rem; font-weight:800; color:var(--lime-primary);" id="statSubnotesCount">0</div><div style="font-size:0.68rem; color:var(--text-tertiary);">Sub-notes</div></div>
+            <div><div style="font-size:1.1rem; font-weight:800; color:var(--lime-primary);" id="statMediaCount">0</div><div style="font-size:0.68rem; color:var(--text-tertiary);">Media Files</div></div>
+          </div>
+        </div>
+
+        <!-- Color Palette Showcase -->
+        <div style="margin-bottom:1.5rem;">
+          <div style="font-size:0.75rem; font-weight:700; color:var(--text-tertiary); text-transform:uppercase; margin-bottom:6px;">Color Palette & Tokens</div>
+          <div class="ds-grid">
+            <div class="ds-swatch" style="background:#b8f627; color:#09150a;">Lime Primary<br>#B8F627</div>
+            <div class="ds-swatch" style="background:#e2fd99; color:#09150a;">Pale Lime<br>#E2FD99</div>
+            <div class="ds-swatch" style="background:#09100a; color:#f5f8f3;">Deep Forest<br>#09100A</div>
+            <div class="ds-swatch" style="background:#15271a; color:#f5f8f3;">Surface Card<br>#15271A</div>
+            <div class="ds-swatch" style="background:#1e4d28; color:#f5f8f3;">Forest Mid<br>#1E4D28</div>
+            <div class="ds-swatch" style="background:#f5f8f3; color:#09150a;">Warm White<br>#F5F8F3</div>
+          </div>
+        </div>
+
+        <!-- Component Gallery -->
+        <div style="margin-bottom:1.5rem;">
+          <div style="font-size:0.75rem; font-weight:700; color:var(--text-tertiary); text-transform:uppercase; margin-bottom:6px;">Button Styles</div>
+          <div style="display:flex; flex-wrap:wrap; gap:8px;">
+            <button class="btn btn-primary">Primary Lime</button>
+            <button class="btn">Surface Default</button>
+            <button class="btn" style="border-color:var(--lime-border); color:var(--lime-primary)">Outline Lime</button>
+            <button class="btn" style="color:var(--danger)">Destructive</button>
+          </div>
+        </div>
+
+        <!-- Library Maintenance -->
+        <div>
+          <div style="font-size:0.75rem; font-weight:700; color:var(--text-tertiary); text-transform:uppercase; margin-bottom:6px;">Library Actions</div>
+          <div style="display:flex; gap:8px;">
+            <button class="btn btn-sm" onclick="resetToSampleData()">Reset Sample Data</button>
+            <button class="btn btn-sm" onclick="wipeAllData()" style="color:var(--danger)">Wipe Everything</button>
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-primary" onclick="closeModal('modalSettings')">Done</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ========================================== -->
+  <!-- 8. HIDDEN FILE INPUTS                      -->
+  <!-- ========================================== -->
+  <input type="file" id="inputImageFile" accept="image/*" style="display:none;" onchange="handleImageFileSelected(this)">
+  <input type="file" id="inputPdfFile" accept="application/pdf" style="display:none;" onchange="handlePdfFileSelected(this)">
+  <input type="file" id="inputRestoreBackup" accept=".zip,.json" style="display:none;" onchange="handleRestoreBackupSelected(this)">
+
+  <!-- Toast Notification Container -->
+  <div class="toast-container" id="toastContainer"></div>
+
+<script>
+
+// ==========================================
+// 1. DATA MODEL & INDEXEDDB STORAGE WRAPPER
+// ==========================================
+const DB_NAME = 'SmartNotesDB_v1';
+const DB_VERSION = 1;
+let dbInstance = null;
+
+const initDB = () => {
+  return new Promise((resolve, reject) => {
+    const request = indexedDB.open(DB_NAME, DB_VERSION);
+    request.onupgradeneeded = (e) => {
+      const db = e.target.result;
+      if (!db.objectStoreNames.contains('items')) {
+        const itemStore = db.createObjectStore('items', { keyPath: 'id' });
+        itemStore.createIndex('parentId', 'parentId', { unique: false });
+        itemStore.createIndex('type', 'type', { unique: false });
+        itemStore.createIndex('updatedAt', 'updatedAt', { unique: false });
+      }
+      if (!db.objectStoreNames.contains('assets')) {
+        db.createObjectStore('assets', { keyPath: 'id' });
+      }
+    };
+    request.onsuccess = (e) => {
+      dbInstance = e.target.result;
+      resolve(dbInstance);
+    };
+    request.onerror = (e) => reject(e.target.error);
+  });
+};
+
+const dbGetAllItems = () => {
+  return new Promise((resolve, reject) => {
+    const tx = dbInstance.transaction('items', 'readonly');
+    const store = tx.objectStore('items');
+    const req = store.getAll();
+    req.onsuccess = () => resolve(req.result || []);
+    req.onerror = () => reject(req.error);
+  });
+};
+
+const dbSaveItem = (item) => {
+  return new Promise((resolve, reject) => {
+    const tx = dbInstance.transaction('items', 'readwrite');
+    const store = tx.objectStore('items');
+    item.updatedAt = Date.now();
+    const req = store.put(item);
+    req.onsuccess = () => resolve(item);
+    req.onerror = () => reject(req.error);
+  });
+};
+
+const dbDeleteItem = (id) => {
+  return new Promise((resolve, reject) => {
+    const tx = dbInstance.transaction('items', 'readwrite');
+    const store = tx.objectStore('items');
+    const req = store.delete(id);
+    req.onsuccess = () => resolve();
+    req.onerror = () => reject(req.error);
+  });
+};
+
+const dbSaveAsset = (asset) => {
+  return new Promise((resolve, reject) => {
+    const tx = dbInstance.transaction('assets', 'readwrite');
+    const store = tx.objectStore('assets');
+    const req = store.put(asset);
+    req.onsuccess = () => resolve(asset);
+    req.onerror = () => reject(req.error);
+  });
+};
+
+const dbGetAsset = (id) => {
+  return new Promise((resolve, reject) => {
+    const tx = dbInstance.transaction('assets', 'readonly');
+    const store = tx.objectStore('assets');
+    const req = store.get(id);
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error);
+  });
+};
+
+const dbClearAll = () => {
+  return new Promise((resolve, reject) => {
+    const tx = dbInstance.transaction(['items', 'assets'], 'readwrite');
+    tx.objectStore('items').clear();
+    tx.objectStore('assets').clear();
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error);
+  });
+};
+
+// ==========================================
+// 2. SAMPLE DATA INITIALIZATION
+// ==========================================
+const SAMPLE_MAP_SVG = 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="800" height="460" viewBox="0 0 800 460"><rect width="800" height="460" fill="%23101c13"/><path d="M 50 230 Q 200 80 400 230 T 750 230" fill="none" stroke="%23b8f627" stroke-width="4" stroke-dasharray="8 6"/><circle cx="120" cy="190" r="18" fill="%23b8f627"/><text x="120" y="195" font-family="sans-serif" font-weight="bold" font-size="12" fill="%230b140d" text-anchor="middle">1</text><text x="120" y="235" font-family="sans-serif" font-size="14" fill="%23e2fd99" text-anchor="middle">Kinkaku-ji Temple</text><circle cx="380" cy="225" r="18" fill="%23b8f627"/><text x="380" y="230" font-family="sans-serif" font-weight="bold" font-size="12" fill="%230b140d" text-anchor="middle">2</text><text x="380" y="270" font-family="sans-serif" font-size="14" fill="%23e2fd99" text-anchor="middle">Gion District & Teahouse</text><circle cx="680" cy="210" r="18" fill="%23b8f627"/><text x="680" y="215" font-family="sans-serif" font-weight="bold" font-size="12" fill="%230b140d" text-anchor="middle">3</text><text x="680" y="250" font-family="sans-serif" font-size="14" fill="%23e2fd99" text-anchor="middle">Fushimi Inari Shrine</text><rect x="560" y="40" width="200" height="90" rx="12" fill="%23162b1b" stroke="%23b8f627" stroke-opacity="0.3"/><text x="580" y="70" font-family="sans-serif" font-weight="bold" font-size="14" fill="%23b8f627">Kyoto Walking Trail</text><text x="580" y="95" font-family="sans-serif" font-size="12" fill="%239cb09f">Autumn Route ? 14.2 km</text><text x="580" y="115" font-family="sans-serif" font-size="11" fill="%23657767">Sample interactive asset</text></svg>';
+
+const SAMPLE_PDF_BASE64 = 'JVBERi0xLjQKJcTl8uXrp/Og0MTGCjEgMCBvYmoKPDwKL1R5cGUgL0NhdGFsb2cKL1BhZ2VzIDIgMCBSCj4+CmVuZG9iagoyIDAgb2JqCjw8Ci9UeXBlIC9QYWdlcwovS2lkcyBbMyAwIFJdCi9Db3VudCAxCj4+CmVuZG9iagozIDAgb2JqCjw8Ci9UeXBlIC9QYWdlCi9QYXJlbnQgMiAwIFIKL01lZGlhQm94IFswIDAgNjEyIDc5Ml0KL0NvbnRlbnRzIDQgMCBSCi9SZXNvdXJjZXMgPDwKL0ZvbnQgPDwKL0YxIDUgMCBSCj4+Cj4+Cj4+CmVuZG9iago0IDAgb2JqCjw8Ci9MZW5ndGggMTg1Cj4+CnN0cmVhbQpCVAovRjEgMjQgVGYKNTAgNzAwIFREClsoc21hcnQgTm90ZXMgQ2xvdWQgU3luYyBFbmdpbmUgU3BlYykdIFRKIgoxNCAgVGYKMCAtNDAgVEQKKFByb2R1Y3Rpb24gQXJjaGl0ZWN0dXJlOiBFbmQtdG8tRW5kIEVuY3J5cHRlZCBDUkRUIFN5bmMpIFRKIgowIC0yNSBURAooT2ZmbGluZS1maXJzdCBzdG9yYWdlIHdpdGggSW5kZXhlZERCIGFuZCBTUUxpdGUgb24gQW5kcm9pZCkgVEoKRVQgZW5kc3RyZWFtCmVuZG9iago1IDAgb2JqCjw8Ci9UeXBlIC9Gb250Ci9TdWJ0eXBlIC9UeXBlMQovQmFzZUZvbnQgL0hlbHZldGljYQo+PgplbmRvYmoKeHJlZgowIDYKMDAwMDAwMDAwMCA2NTUzNSBmIAowMDAwMDAwMDE1IDAwMDAwIG4gCjDAwMDAwMDA2OCAwMDAwMCBuIAowMDAwMDAwMTI1IDAwMDAwIG4gCjAwMDAwMDAyNTYAwMDAwIG4gCjAwMDAwMDA0OTQgMDAwMDAgbiAKdHJhaWxlcgo8PAovU2l6ZSA2Ci9Sb290IDEgMCBSCj4+CnN0YXJ0eHJlZgo1NzMKJSVFT0YK';
+
+const getInitialSampleData = () => {
+  const now = Date.now();
+  return [
+    // Folders
+    { id: 'f-personal', type: 'folder', parentId: null, title: 'Personal Life', createdAt: now - 86400000 * 5, updatedAt: now - 86400000 * 5 },
+    { id: 'f-travel', type: 'folder', parentId: 'f-personal', title: 'Travel & Itineraries', createdAt: now - 86400000 * 4, updatedAt: now - 86400000 * 4 },
+    { id: 'f-work', type: 'folder', parentId: null, title: 'Work & Projects', createdAt: now - 86400000 * 6, updatedAt: now - 86400000 * 6 },
+    { id: 'f-spec', type: 'folder', parentId: 'f-work', title: 'Smart Notes Architecture', createdAt: now - 86400000 * 3, updatedAt: now - 86400000 * 3 },
+
+    // Root Note: Getting Started
+    {
+      id: 'n-welcome',
+      type: 'note',
+      parentId: null,
+      title: 'Welcome to Smart Notes 🌿',
+      content: `<h1>Welcome to Smart Notes</h1>
+<p>Smart Notes is designed for <strong>rapid thought capture</strong>, <em>deep writing</em>, and unlimited nested organization. Everything is stored locally on this device first.</p>
+
+<h3>✨ What you can test right now:</h3>
+<div class="task-item completed"><input type="checkbox" class="task-checkbox" checked> <span class="task-text">Nested Folders & Sub-notes to unlimited depth</span></div>
+<div class="task-item completed"><input type="checkbox" class="task-checkbox" checked> <span class="task-text">Rich formatting: headings, sizes, colors, blockquotes</span></div>
+<div class="task-item completed"><input type="checkbox" class="task-checkbox" checked> <span class="task-text">Interactive checklists with real-time state save</span></div>
+<div class="task-item completed"><input type="checkbox" class="task-checkbox" checked> <span class="task-text">Image & PDF document imports with visual annotations</span></div>
+<div class="task-item"><input type="checkbox" class="task-checkbox"> <span class="task-text">Try the <strong>Zen Focus Mode</strong> using the top bar icon</span></div>
+<div class="task-item"><input type="checkbox" class="task-checkbox"> <span class="task-text">Export library to a real hierarchical ZIP archive</span></div>
+
+<blockquote>"A calm, focused space for thinking clearly and connecting ideas without distraction."</blockquote>
+
+<p>Use the navigation on the left (or bottom dock in mobile view) to explore folders and child notes.</p>`,
+      isPinned: true,
+      createdAt: now - 86400000 * 3,
+      updatedAt: now - 86400000 * 1,
+      media: []
+    },
+
+    // Note in Travel Folder: Kyoto Trip
+    {
+      id: 'n-kyoto',
+      type: 'note',
+      parentId: 'f-travel',
+      title: 'Kyoto Autumn Trip 2026',
+      content: `<h2>Kyoto Itinerary & Exploration Map</h2>
+<p>Planning our 5-day journey through the historic temples, gardens, and traditional roasters of Kyoto during peak autumn foliage season.</p>
+
+<h3>Route Overview & Landmarks</h3>
+<p>We will start at Kinkaku-ji in the early morning to beat the crowds, wander down philosopher's path, and end with sunset at Fushimi Inari shrine.</p>
+
+<blockquote>Tip: Click <strong>"✏️ Annotate"</strong> on the map below to test placing movable text notes or drawing hiking markers directly over the document!</blockquote>`,
+      isPinned: true,
+      createdAt: now - 86400000 * 4,
+      updatedAt: now - 86400000 * 2,
+      media: [
+        {
+          id: 'm-kyoto-map',
+          type: 'image',
+          name: 'kyoto_walking_trail_map.svg',
+          dataUrl: SAMPLE_MAP_SVG,
+          annotations: {
+            paths: [
+              { color: '#b8f627', width: 3, points: [{x: 0.15, y: 0.41}, {x: 0.25, y: 0.35}, {x: 0.47, y: 0.49}, {x: 0.85, y: 0.45}] }
+            ],
+            textBoxes: [
+              { id: 'tb-1', text: '📍 Morning Rendezvous Point', x: 0.08, y: 0.15, color: '#b8f627' },
+              { id: 'tb-2', text: '🍵 Best Matcha Teahouse', x: 0.42, y: 0.72, color: '#e2fd99' }
+            ]
+          }
+        }
+      ]
+    },
+
+    // Child Note 1 under Kyoto Note: Packing List
+    {
+      id: 'n-packing',
+      type: 'note',
+      parentId: 'n-kyoto', // Child Note!
+      title: 'Packing Checklist & Travel Gear',
+      content: `<h2>Autumn Gear & Essentials</h2>
+<p>Keep luggage lightweight for regional train travel on the Shinkansen.</p>
+
+<h3>Apparel & Footwear</h3>
+<div class="task-item completed"><input type="checkbox" class="task-checkbox" checked> <span class="task-text">Water-resistant walking sneakers (broken in)</span></div>
+<div class="task-item completed"><input type="checkbox" class="task-checkbox" checked> <span class="task-text">Lightweight merino wool layers</span></div>
+<div class="task-item"><input type="checkbox" class="task-checkbox"> <span class="task-text">Packable rain shell jacket</span></div>
+
+<h3>Tech & Electronics</h3>
+<div class="task-item completed"><input type="checkbox" class="task-checkbox" checked> <span class="task-text">Fujifilm X-T5 + 27mm pancake lens</span></div>
+<div class="task-item"><input type="checkbox" class="task-checkbox"> <span class="task-text">20,000mAh Power bank with USB-C PD</span></div>
+<div class="task-item"><input type="checkbox" class="task-checkbox"> <span class="task-text">Smart Notes offline synced copies of booking PDFs</span></div>`,
+      isPinned: false,
+      createdAt: now - 86400000 * 2,
+      updatedAt: now - 86400000 * 1,
+      media: []
+    },
+
+    // Child Note 2 under Kyoto Note: Cafes
+    {
+      id: 'n-cafes',
+      type: 'note',
+      parentId: 'n-kyoto', // Child Note!
+      title: 'Specialty Cafes & Hidden Roasters',
+      content: `<h2>Kyoto Coffee Culture</h2>
+<p>Kyoto blends 100-year-old kissaten tradition with state-of-the-art specialty pour-over roasteries.</p>
+<ul>
+  <li><strong>Weekenders Coffee:</strong> Tucked into a quiet courtyard parking lot. Outstanding natural Ethiopian wash.</li>
+  <li><strong>Kurasu Kyoto Stand:</strong> Right outside Kyoto station. Precision V60 brews and ceramic drinkware.</li>
+  <li><strong>Walden Woods:</strong> Minimalist all-white cathedral space with direct trade beans roasted on-site.</li>
+</ul>`,
+      isPinned: false,
+      createdAt: now - 86400000 * 2,
+      updatedAt: now - 86400000 * 1,
+      media: []
+    },
+
+    // Note in Architecture Folder: Sync Spec
+    {
+      id: 'n-sync-spec',
+      type: 'note',
+      parentId: 'f-spec',
+      title: 'Offline-First Sync Engine Spec',
+      content: `<h2>Smart Notes Sync Engine (Planned Production)</h2>
+<p>This technical note outlines how the upcoming Android and Desktop applications ensure zero data loss during offline usage.</p>
+
+<h3>Key Design Pillars:</h3>
+<ul>
+  <li><strong>Local Autonomy:</strong> Every edit, keystroke, and image attachment is committed directly to on-device storage immediately.</li>
+  <li><strong>CRDT Convergence:</strong> Edits merge automatically across phones and laptops without blocking dialogs when possible.</li>
+  <li><strong>End-to-End Encryption:</strong> User keys remain on-device; the cloud sync broker only transfers encrypted sync blocks.</li>
+</ul>
+
+<pre><code>// Sample Sync Protocol Operation
+interface SyncDelta {
+  entityId: string;
+  versionVector: Map&lt;DeviceId, SequenceNumber&gt;;
+  lamportClock: number;
+  patch: AutomergePatch;
+}</code></pre>
+
+<p>Attached below is the technical specification document. You can navigate pages, zoom, or annotate the schematic.</p>`,
+      isPinned: true,
+      createdAt: now - 86400000 * 5,
+      updatedAt: now - 86400000 * 2,
+      media: [
+        {
+          id: 'm-sync-pdf',
+          type: 'pdf',
+          name: 'smart_notes_architecture_spec_v1.pdf',
+          dataUrl: 'data:application/pdf;base64,' + SAMPLE_PDF_BASE64,
+          annotations: {
+            paths: [],
+            textBoxes: [
+              { id: 'tb-pdf-1', text: '⚡ Verified for Android 15 & Chrome Engine', x: 0.1, y: 0.28, color: '#b8f627' }
+            ]
+          }
+        }
+      ]
+    },
+
+    // Child Note under Sync Spec: Conflict Resolution
+    {
+      id: 'n-conflict',
+      type: 'note',
+      parentId: 'n-sync-spec', // Child note of a note!
+      title: 'CRDT Conflict Resolution Strategy',
+      content: `<h2>Conflict Resolution Mechanics</h2>
+<p>When two devices make contradictory edits to the same paragraph while both are offline:</p>
+<ol>
+  <li>Non-conflicting property updates (e.g. title renamed on Device A, body edited on Device B) auto-merge cleanly.</li>
+  <li>Concurrent conflicting paragraph edits present the user with an intuitive visual resolution preview before final confirmation.</li>
+</ol>
+<blockquote>Try the <strong>"Sync & Conflict Demo"</strong> from the top bar or settings menu to test the prototype conflict resolution interface.</blockquote>`,
+      isPinned: false,
+      createdAt: now - 86400000 * 3,
+      updatedAt: now - 86400000 * 2,
+      media: []
+    }
+  ];
+};
+
+// ==========================================
+// 3. PURE-JS STORE-MODE ZIP FILE WRITER
+// Zero external dependencies, runs offline!
+// ==========================================
+class PureZipWriter {
+  constructor() {
+    this.files = [];
+  }
+
+  static getCRCTable() {
+    if (!PureZipWriter.crcTable) {
+      const table = [];
+      for (let n = 0; n < 256; n++) {
+        let c = n;
+        for (let k = 0; k < 8; k++) {
+          c = ((c & 1) ? (0xEDB88320 ^ (c >>> 1)) : (c >>> 1));
+        }
+        table[n] = c;
+      }
+      PureZipWriter.crcTable = table;
+    }
+    return PureZipWriter.crcTable;
+  }
+
+  static crc32(uint8Array) {
+    const table = PureZipWriter.getCRCTable();
+    let crc = 0 ^ (-1);
+    for (let i = 0; i < uint8Array.length; i++) {
+      crc = (crc >>> 8) ^ table[(crc ^ uint8Array[i]) & 0xFF];
+    }
+    return (crc ^ (-1)) >>> 0;
+  }
+
+  addFile(path, content) {
+    let bytes;
+    if (typeof content === 'string') {
+      bytes = new TextEncoder().encode(content);
+    } else if (content instanceof Uint8Array) {
+      bytes = content;
+    } else if (content instanceof ArrayBuffer) {
+      bytes = new Uint8Array(content);
+    } else {
+      bytes = new TextEncoder().encode(String(content));
+    }
+    this.files.push({
+      path: path.replace(/^\/+/, ''),
+      data: bytes,
+      crc: PureZipWriter.crc32(bytes)
+    });
+  }
+
+  generateBlob() {
+    let localHeadersSize = 0;
+    let centralDirSize = 0;
+    const encoder = new TextEncoder();
+
+    this.files.forEach(f => {
+      const nameBytes = encoder.encode(f.path);
+      f.nameBytes = nameBytes;
+      localHeadersSize += 30 + nameBytes.length + f.data.length;
+      centralDirSize += 46 + nameBytes.length;
+    });
+
+    const totalSize = localHeadersSize + centralDirSize + 22;
+    const buffer = new Uint8Array(totalSize);
+    const view = new DataView(buffer.buffer);
+    let offset = 0;
+    const offsets = [];
+
+    // Write Local File Headers
+    this.files.forEach(f => {
+      offsets.push(offset);
+      view.setUint32(offset, 0x04034b50, true); // Local header signature
+      view.setUint16(offset + 4, 10, true);      // Version needed
+      view.setUint16(offset + 6, 0, true);       // General flags
+      view.setUint16(offset + 8, 0, true);       // Store (no compression)
+      view.setUint16(offset + 10, 0, true);      // Time
+      view.setUint16(offset + 12, 0, true);      // Date
+      view.setUint32(offset + 14, f.crc, true);  // CRC32
+      view.setUint32(offset + 18, f.data.length, true); // Comp size
+      view.setUint32(offset + 22, f.data.length, true); // Uncomp size
+      view.setUint16(offset + 26, f.nameBytes.length, true); // Name len
+      view.setUint16(offset + 28, 0, true);      // Extra field len
+      offset += 30;
+
+      buffer.set(f.nameBytes, offset);
+      offset += f.nameBytes.length;
+
+      buffer.set(f.data, offset);
+      offset += f.data.length;
+    });
+
+    // Write Central Directory Headers
+    const centralDirStart = offset;
+    this.files.forEach((f, idx) => {
+      view.setUint32(offset, 0x02014b50, true); // Central header signature
+      view.setUint16(offset + 4, 20, true);      // Version made by
+      view.setUint16(offset + 6, 10, true);      // Version needed
+      view.setUint16(offset + 8, 0, true);       // Flags
+      view.setUint16(offset + 10, 0, true);      // Store
+      view.setUint16(offset + 12, 0, true);      // Time
+      view.setUint16(offset + 14, 0, true);      // Date
+      view.setUint32(offset + 16, f.crc, true);  // CRC32
+      view.setUint32(offset + 20, f.data.length, true); // Comp size
+      view.setUint32(offset + 24, f.data.length, true); // Uncomp size
+      view.setUint16(offset + 28, f.nameBytes.length, true); // Name len
+      view.setUint16(offset + 30, 0, true);      // Extra len
+      view.setUint16(offset + 32, 0, true);      // Comment len
+      view.setUint16(offset + 34, 0, true);      // Disk start
+      view.setUint16(offset + 36, 0, true);      // Int attrs
+      view.setUint32(offset + 38, 0, true);      // Ext attrs
+      view.setUint32(offset + 42, offsets[idx], true); // Offset of local header
+      offset += 46;
+
+      buffer.set(f.nameBytes, offset);
+      offset += f.nameBytes.length;
+    });
+
+    // End of Central Directory Record
+    view.setUint32(offset, 0x06054b50, true); // EOCD signature
+    view.setUint16(offset + 4, 0, true);      // Disk number
+    view.setUint16(offset + 6, 0, true);      // Disk with CD
+    view.setUint16(offset + 8, this.files.length, true); // Entries on this disk
+    view.setUint16(offset + 10, this.files.length, true); // Total entries
+    view.setUint32(offset + 12, offset - centralDirStart, true); // CD size
+    view.setUint32(offset + 16, centralDirStart, true); // CD offset
+    view.setUint16(offset + 20, 0, true);     // Comment len
+
+    return new Blob([buffer], { type: 'application/zip' });
+  }
+}
+
+console.log("Core JS Engine classes ready.");
+
+</script>
+<script>
+// ==========================================
+// APPLICATION STATE
+// ==========================================
+const appState = {
+  items: [],
+  selectedNoteId: null,
+  selectedFolderId: null, // null = all notes view
+  activeSpecialFilter: 'all', // 'all', 'pinned', 'recent'
+  cardFilter: 'all', // 'all', 'pinned', 'subnotes', 'media'
+  searchQuery: '',
+  viewMode: 'desktop', // 'desktop', 'mobile', 'auto'
+  isZenMode: false,
+  
+  // Mobile specific
+  mobileScreen: 'library', // 'library', 'folder', 'editor', 'search', 'settings'
+  mobileFolderId: null,
+  mobileActiveTab: 'library',
+
+  // Annotation state
+  activeAnnotation: null, // { noteId, mediaId, mediaIndex }
+  annotationTool: 'pen', // 'pen', 'text'
+  penColor: '#b8f627',
+  penWidth: 4,
+  isDrawing: false,
+  drawnPaths: [],
+  currentPath: null,
+  textBoxes: [],
+
+  // PDF page & zoom tracking: mediaId -> { page: 1, total: 1, zoom: 1.0 }
+  pdfStates: {},
+
+  // Auto-save timer
+  saveTimer: null,
+  moveTargetItemId: null
+};
+
+// ==========================================
+// INITIALIZATION
+// ==========================================
+window.addEventListener('DOMContentLoaded', async () => {
+  try {
+    await initDB();
+    let storedItems = await dbGetAllItems();
+    if (!storedItems || storedItems.length === 0) {
+      console.log('Seeding initial sample data into IndexedDB...');
+      const sample = getInitialSampleData();
+      for (const item of sample) {
+        await dbSaveItem(item);
+      }
+      storedItems = await dbGetAllItems();
+    }
+    appState.items = storedItems;
+
+    // Default select welcome note
+    const welcome = appState.items.find(i => i.id === 'n-welcome') || appState.items.find(i => i.type === 'note');
+    if (welcome) {
+      appState.selectedNoteId = welcome.id;
+    }
+
+    // Initialize View Mode
+    detectInitialViewMode();
+
+    // Render Everything
+    refreshFullUI();
+
+    // Set up Global Keyboard Shortcuts & Drag/Drop
+    setupKeyboardShortcuts();
+    setupGlobalDragAndDrop();
+
+    showToast('Smart Notes loaded (Local-first IndexedDB active)');
+  } catch (err) {
+    console.error('Initialization error:', err);
+    showToast('Storage initialization note: ' + err.message);
+  }
+});
+
+// View mode switcher
+function detectInitialViewMode() {
+  if (window.innerWidth <= 768) {
+    setAppViewMode('mobile');
+  } else {
+    setAppViewMode('desktop');
+  }
+}
+
+function setAppViewMode(mode) {
+  appState.viewMode = mode;
+  document.querySelectorAll('.switch-btn').forEach(b => b.classList.remove('active'));
+  document.body.classList.remove('forced-desktop');
+
+  if (mode === 'desktop') {
+    document.getElementById('btnSwitchDesktop').classList.add('active');
+    document.getElementById('desktopViewContainer').style.display = 'flex';
+    document.getElementById('mobilePhoneShell').style.display = 'none';
+    document.body.classList.add('forced-desktop');
+  } else if (mode === 'mobile') {
+    document.getElementById('btnSwitchMobile').classList.add('active');
+    document.getElementById('desktopViewContainer').style.display = 'none';
+    document.getElementById('mobilePhoneShell').style.display = 'flex';
+  } else { // auto
+    document.getElementById('btnSwitchAuto').classList.add('active');
+    if (window.innerWidth <= 768) {
+      document.getElementById('desktopViewContainer').style.display = 'none';
+      document.getElementById('mobilePhoneShell').style.display = 'flex';
+    } else {
+      document.getElementById('desktopViewContainer').style.display = 'flex';
+      document.getElementById('mobilePhoneShell').style.display = 'none';
+    }
+  }
+}
+
+window.addEventListener('resize', () => {
+  if (appState.viewMode === 'auto') {
+    setAppViewMode('auto');
+  }
+});
+
+function toggleZenFocusMode() {
+  appState.isZenMode = !appState.isZenMode;
+  document.body.classList.toggle('zen-focus-mode', appState.isZenMode);
+  document.getElementById('btnZenFocus').classList.toggle('active', appState.isZenMode);
+  showToast(appState.isZenMode ? 'Zen Focus Mode: Sidebars hidden' : 'Standard View restored');
+}
+
+// ==========================================
+// REFRESH & RENDER CONTROLLERS
+// ==========================================
+function refreshFullUI() {
+  updateCountsAndTelemetry();
+  renderDesktopTree();
+  renderDesktopNotesCards();
+  renderDesktopEditor();
+  renderMobileScreens();
+}
+
+function updateCountsAndTelemetry() {
+  const notes = appState.items.filter(i => i.type === 'note');
+  const folders = appState.items.filter(i => i.type === 'folder');
+  const pinned = notes.filter(n => n.isPinned);
+  const subnotes = notes.filter(n => {
+    const parent = appState.items.find(p => p.id === n.parentId);
+    return parent && parent.type === 'note';
+  });
+  
+  let mediaCount = 0;
+  notes.forEach(n => {
+    if (n.media && Array.isArray(n.media)) {
+      mediaCount += n.media.length;
+    }
+  });
+
+  // UI labels
+  const elAll = document.getElementById('countAllNotes');
+  const elPin = document.getElementById('countPinnedNotes');
+  const elRec = document.getElementById('countRecentNotes');
+  if (elAll) elAll.textContent = notes.length;
+  if (elPin) elPin.textContent = pinned.length;
+  if (elRec) elRec.textContent = notes.slice(0, 5).length;
+
+  const storageTxt = document.getElementById('storageStatsText');
+  if (storageTxt) storageTxt.textContent = `Local DB: ${notes.length} notes, ${folders.length} folders`;
+
+  const mobTotal = document.getElementById('mobTotalNotesText');
+  if (mobTotal) mobTotal.textContent = `${notes.length} Notes`;
+
+  // Telemetry modal values
+  const snc = document.getElementById('statNotesCount');
+  const sfc = document.getElementById('statFoldersCount');
+  const ssc = document.getElementById('statSubnotesCount');
+  const smc = document.getElementById('statMediaCount');
+  if (snc) snc.textContent = notes.length;
+  if (sfc) sfc.textContent = folders.length;
+  if (ssc) ssc.textContent = subnotes.length;
+  if (smc) smc.textContent = mediaCount;
+}
+
+// ==========================================
+// DESKTOP TREE VIEW (UNLIMITED DEPTH)
+// ==========================================
+function renderDesktopTree() {
+  const container = document.getElementById('desktopTreeContainer');
+  if (!container) return;
+  container.innerHTML = '';
+
+  // Get root folders
+  const rootFolders = appState.items.filter(i => i.type === 'folder' && i.parentId === null);
+  // Get root notes (notes whose parent is null)
+  const rootNotes = appState.items.filter(i => i.type === 'note' && i.parentId === null);
+
+  rootFolders.forEach(folder => {
+    container.appendChild(createTreeNodeElement(folder, 0));
+  });
+
+  if (rootNotes.length > 0) {
+    const rootNotesWrap = document.createElement('div');
+    rootNotesWrap.style.marginTop = '6px';
+    rootNotes.forEach(note => {
+      rootNotesWrap.appendChild(createTreeNodeElement(note, 0));
+    });
+    container.appendChild(rootNotesWrap);
+  }
+}
+
+function createTreeNodeElement(item, depth) {
+  const wrap = document.createElement('div');
+  wrap.className = 'tree-node-wrap';
+
+  // Check children: subfolders, notes in folder, or sub-notes in note!
+  const childFolders = appState.items.filter(i => i.type === 'folder' && i.parentId === item.id);
+  const childNotes = appState.items.filter(i => i.type === 'note' && i.parentId === item.id);
+  const hasChildren = (childFolders.length + childNotes.length) > 0;
+
+  const row = document.createElement('div');
+  row.className = 'tree-item-row';
+  row.style.paddingLeft = `${depth * 14 + 6}px`;
+
+  if (item.type === 'folder' && appState.selectedFolderId === item.id && appState.activeSpecialFilter === 'folder') {
+    row.classList.add('selected');
+  } else if (item.type === 'note' && appState.selectedNoteId === item.id) {
+    row.classList.add('selected');
+  }
+
+  // Caret toggle
+  const arrow = document.createElement('span');
+  arrow.className = 'tree-arrow' + (hasChildren ? '' : ' disabled');
+  arrow.innerHTML = hasChildren ? '▶' : '•';
+  if (hasChildren) {
+    arrow.onclick = (e) => {
+      e.stopPropagation();
+      const subTree = wrap.querySelector('.tree-sub-tree');
+      if (subTree) {
+        subTree.classList.toggle('open');
+        arrow.classList.toggle('open');
+      }
+    };
+  }
+  row.appendChild(arrow);
+
+  // Icon
+  const icon = document.createElement('span');
+  icon.className = 'tree-icon';
+  if (item.type === 'folder') {
+    icon.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path></svg>`;
+    icon.style.color = '#b8f627';
+  } else {
+    // Note or sub-note
+    const isSubnote = isItemSubnote(item);
+    icon.innerHTML = isSubnote
+      ? `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="9" y1="18" x2="15" y2="18"></line><line x1="12" y1="15" x2="12" y2="21"></line><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path></svg>`
+      : `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path></svg>`;
+    icon.style.color = isSubnote ? '#e2fd99' : 'var(--text-secondary)';
+  }
+  row.appendChild(icon);
+
+  // Title
+  const title = document.createElement('span');
+  title.className = 'tree-title';
+  title.textContent = item.title || (item.type === 'folder' ? 'Untitled Folder' : 'Untitled Note');
+  row.appendChild(title);
+
+  // Row Quick Actions
+  const actions = document.createElement('span');
+  actions.className = 'tree-row-actions';
+
+  if (item.type === 'folder') {
+    actions.innerHTML = `
+      <button class="tree-action-btn" title="New Subfolder" onclick="event.stopPropagation(); promptCreateFolder('${item.id}')">+</button>
+      <button class="tree-action-btn" title="New Note in Folder" onclick="event.stopPropagation(); createNewNote('${item.id}')">📝</button>
+      <button class="tree-action-btn" title="Rename" onclick="event.stopPropagation(); promptRenameItem('${item.id}')">✏️</button>
+      <button class="tree-action-btn" title="Delete" style="color:var(--danger)" onclick="event.stopPropagation(); confirmDeleteItem('${item.id}')">×</button>
+    `;
+  } else {
+    actions.innerHTML = `
+      <button class="tree-action-btn" title="Add Child Note" onclick="event.stopPropagation(); createChildNote('${item.id}')">+</button>
+      <button class="tree-action-btn" title="Move" onclick="event.stopPropagation(); openMoveModal('${item.id}')">↗</button>
+      <button class="tree-action-btn" title="Delete" style="color:var(--danger)" onclick="event.stopPropagation(); confirmDeleteItem('${item.id}')">×</button>
+    `;
+  }
+  row.appendChild(actions);
+
+  // Click row selection
+  row.onclick = () => {
+    if (item.type === 'folder') {
+      setDesktopFolderFilter(item.id);
+    } else {
+      selectNote(item.id);
+    }
+  };
+
+  wrap.appendChild(row);
+
+  // Sub-tree container
+  if (hasChildren) {
+    const subTree = document.createElement('div');
+    subTree.className = 'tree-sub-tree' + (depth < 2 ? ' open' : '');
+    if (depth < 2) arrow.classList.add('open');
+
+    // Child folders first
+    childFolders.forEach(cf => {
+      subTree.appendChild(createTreeNodeElement(cf, depth + 1));
+    });
+
+    // Then child notes
+    childNotes.forEach(cn => {
+      subTree.appendChild(createTreeNodeElement(cn, depth + 1));
+    });
+
+    wrap.appendChild(subTree);
+  }
+
+  return wrap;
+}
+
+function isItemSubnote(note) {
+  if (!note.parentId) return false;
+  const parent = appState.items.find(i => i.id === note.parentId);
+  return parent && parent.type === 'note';
+}
+
+function setDesktopFolderFilter(folderId) {
+  appState.selectedFolderId = folderId;
+  appState.activeSpecialFilter = folderId ? 'folder' : 'all';
+  document.querySelectorAll('.nav-link').forEach(l => l.classList.remove('active'));
+  if (!folderId) {
+    document.getElementById('navAllNotes').classList.add('active');
+  }
+  renderDesktopTree();
+  renderDesktopNotesCards();
+}
+
+function setDesktopSpecialFilter(filterType) {
+  appState.activeSpecialFilter = filterType;
+  appState.selectedFolderId = null;
+  document.querySelectorAll('.nav-link').forEach(l => l.classList.remove('active'));
+  if (filterType === 'pinned') document.getElementById('navPinnedNotes').classList.add('active');
+  if (filterType === 'recent') document.getElementById('navRecentNotes').classList.add('active');
+  renderDesktopTree();
+  renderDesktopNotesCards();
+}
+
+// ==========================================
+// DESKTOP NOTES LIST (MIDDLE COLUMN)
+// ==========================================
+function renderDesktopNotesCards() {
+  const container = document.getElementById('desktopNotesCards');
+  const titleEl = document.getElementById('desktopListTitle');
+  if (!container) return;
+  container.innerHTML = '';
+
+  // Determine list title
+  if (appState.activeSpecialFilter === 'pinned') {
+    titleEl.textContent = 'Pinned Notes';
+  } else if (appState.activeSpecialFilter === 'recent') {
+    titleEl.textContent = 'Recent Notes';
+  } else if (appState.selectedFolderId) {
+    const f = appState.items.find(i => i.id === appState.selectedFolderId);
+    titleEl.textContent = f ? f.title : 'Folder Notes';
+  } else {
+    titleEl.textContent = 'All Notes';
+  }
+
+  // Filter notes
+  let notes = appState.items.filter(i => i.type === 'note');
+
+  if (appState.activeSpecialFilter === 'pinned') {
+    notes = notes.filter(n => n.isPinned);
+  } else if (appState.activeSpecialFilter === 'recent') {
+    notes = [...notes].sort((a, b) => b.updatedAt - a.updatedAt);
+  } else if (appState.selectedFolderId) {
+    // Show notes directly in this folder or descendant notes
+    notes = notes.filter(n => n.parentId === appState.selectedFolderId);
+  }
+
+  // Filter chips
+  if (appState.cardFilter === 'pinned') {
+    notes = notes.filter(n => n.isPinned);
+  } else if (appState.cardFilter === 'subnotes') {
+    notes = notes.filter(n => isItemSubnote(n));
+  } else if (appState.cardFilter === 'media') {
+    notes = notes.filter(n => n.media && n.media.length > 0);
+  }
+
+  // Search Query filter
+  if (appState.searchQuery.trim()) {
+    const q = appState.searchQuery.toLowerCase();
+    notes = notes.filter(n => {
+      const titleMatch = (n.title || '').toLowerCase().includes(q);
+      const plainBody = (n.content || '').replace(/<[^>]*>/g, '').toLowerCase();
+      const bodyMatch = plainBody.includes(q);
+      return titleMatch || bodyMatch;
+    });
+  }
+
+  if (notes.length === 0) {
+    container.innerHTML = `
+      <div class="empty-state">
+        <div class="empty-icon-wrap">
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><line x1="9" y1="15" x2="15" y2="15"></line></svg>
+        </div>
+        <div class="empty-title">No notes found</div>
+        <div class="empty-desc">Create your first note in this section or adjust your search filter.</div>
+        <button class="btn btn-primary btn-sm" onclick="createNewNote(appState.selectedFolderId)">+ Create Note</button>
+      </div>
+    `;
+    return;
+  }
+
+  notes.forEach(note => {
+    const card = document.createElement('div');
+    card.className = 'note-card' + (appState.selectedNoteId === note.id ? ' active' : '');
+    card.onclick = () => selectNote(note.id);
+
+    const isSubnote = isItemSubnote(note);
+    const mediaCount = (note.media || []).length;
+    const plainText = (note.content || '').replace(/<[^>]*>/g, '').trim();
+
+    // Highlight search matches
+    let displayTitle = escapeHtml(note.title || 'Untitled Note');
+    let displayExcerpt = escapeHtml(plainText.slice(0, 100) || 'Empty note content...');
+    if (appState.searchQuery.trim()) {
+      displayTitle = highlightText(displayTitle, appState.searchQuery);
+      displayExcerpt = highlightText(displayExcerpt, appState.searchQuery);
+    }
+
+    card.innerHTML = `
+      <div class="note-card-top">
+        <div class="note-card-title">${displayTitle}</div>
+        ${note.isPinned ? `<span class="badge-pin" title="Pinned">★</span>` : ''}
+      </div>
+      <div class="note-card-excerpt">${displayExcerpt}</div>
+      <div class="note-card-meta">
+        <span>${formatRelativeDate(note.updatedAt)}</span>
+        <div class="note-card-badges">
+          ${isSubnote ? `<span class="badge-tag lime">Sub-note</span>` : ''}
+          ${mediaCount > 0 ? `<span class="badge-tag">${mediaCount} doc${mediaCount > 1 ? 's' : ''}</span>` : ''}
+        </div>
+      </div>
+    `;
+
+    container.appendChild(card);
+  });
+}
+
+function setNoteCardFilter(filter) {
+  appState.cardFilter = filter;
+  document.querySelectorAll('.filter-chip').forEach(c => c.classList.remove('active'));
+  if (filter === 'all') document.getElementById('chipAll').classList.add('active');
+  if (filter === 'pinned') document.getElementById('chipPinned').classList.add('active');
+  if (filter === 'subnotes') document.getElementById('chipSubnotes').classList.add('active');
+  if (filter === 'media') document.getElementById('chipMedia').classList.add('active');
+  renderDesktopNotesCards();
+}
+
+function onSearchQueryChange(query) {
+  appState.searchQuery = query;
+  const clearBtn = document.getElementById('desktopSearchClear');
+  if (clearBtn) clearBtn.style.display = query ? 'block' : 'none';
+  renderDesktopNotesCards();
+}
+
+function clearSearchQuery() {
+  appState.searchQuery = '';
+  document.getElementById('desktopSearchInput').value = '';
+  const clearBtn = document.getElementById('desktopSearchClear');
+  if (clearBtn) clearBtn.style.display = 'none';
+  renderDesktopNotesCards();
+}
+
+function selectNote(noteId) {
+  appState.selectedNoteId = noteId;
+  renderDesktopTree();
+  renderDesktopNotesCards();
+  renderDesktopEditor();
+
+  // If in mobile view, switch to editor screen
+  if (appState.viewMode === 'mobile' || window.innerWidth <= 768) {
+    switchMobileScreen('editor');
+  }
+}
+
+// ==========================================
+// EDITOR CONTROLLER & RICH TEXT RENDERING
+// ==========================================
+function renderDesktopEditor() {
+  const note = appState.items.find(i => i.id === appState.selectedNoteId && i.type === 'note');
+  const titleInput = document.getElementById('editorTitle');
+  const bodyEl = document.getElementById('editorBody');
+  const breadcrumbEl = document.getElementById('editorBreadcrumb');
+  const mediaContainer = document.getElementById('editorMediaContainer');
+  const subnotesGrid = document.getElementById('editorSubnotesGrid');
+  const subnotesCountBadge = document.getElementById('subnotesCountBadge');
+
+  if (!note) {
+    if (titleInput) titleInput.value = '';
+    if (bodyEl) bodyEl.innerHTML = '<div class="empty-state"><div class="empty-title">No note selected</div><p class="empty-desc">Select a note from the left column or create a new one to begin writing.</p></div>';
+    if (breadcrumbEl) breadcrumbEl.innerHTML = '';
+    if (mediaContainer) mediaContainer.innerHTML = '';
+    if (subnotesGrid) subnotesGrid.innerHTML = '';
+    return;
+  }
+
+  // Title & Body
+  if (titleInput) titleInput.value = note.title || '';
+  if (bodyEl) {
+    bodyEl.innerHTML = note.content || '';
+    attachChecklistListeners(bodyEl);
+  }
+
+  // Metadata
+  const createdEl = document.getElementById('metaCreatedDate');
+  const modifiedEl = document.getElementById('metaModifiedDate');
+  const wordEl = document.getElementById('metaWordCount');
+  if (createdEl) createdEl.textContent = 'Created: ' + new Date(note.createdAt).toLocaleDateString();
+  if (modifiedEl) modifiedEl.textContent = 'Modified: ' + new Date(note.updatedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  if (wordEl) {
+    const words = (note.content || '').replace(/<[^>]*>/g, '').trim().split(/\s+/).filter(Boolean).length;
+    wordEl.textContent = words + ' words';
+  }
+
+  // Breadcrumbs with clickable path
+  if (breadcrumbEl) {
+    breadcrumbEl.innerHTML = buildBreadcrumbHtml(note);
+  }
+
+  // Pinned button state
+  const btnPin = document.getElementById('btnPinCurrentNote');
+  if (btnPin) {
+    btnPin.style.color = note.isPinned ? 'var(--lime-primary)' : 'var(--text-secondary)';
+  }
+
+  // Media attachments (Images & PDFs)
+  if (mediaContainer) {
+    renderMediaAttachments(note, mediaContainer);
+  }
+
+  // Child Notes / Sub-pages
+  const childNotes = appState.items.filter(i => i.type === 'note' && i.parentId === note.id);
+  if (subnotesCountBadge) subnotesCountBadge.textContent = childNotes.length;
+  if (subnotesGrid) {
+    subnotesGrid.innerHTML = '';
+    if (childNotes.length === 0) {
+      subnotesGrid.innerHTML = `<div style="font-size:0.78rem; color:var(--text-tertiary); grid-column:1/-1;">No nested sub-notes yet. Click "+ Add Sub-Note" to nest notes inside this note.</div>`;
+    } else {
+      childNotes.forEach(cn => {
+        const cnCard = document.createElement('div');
+        cnCard.className = 'subnote-card';
+        cnCard.onclick = () => selectNote(cn.id);
+        cnCard.innerHTML = `
+          <div class="subnote-card-title">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="9" y1="18" x2="15" y2="18"></line><line x1="12" y1="15" x2="12" y2="21"></line><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path></svg>
+            ${escapeHtml(cn.title || 'Untitled Sub-Note')}
+          </div>
+          <div class="subnote-card-date">Modified ${formatRelativeDate(cn.updatedAt)}</div>
+        `;
+        subnotesGrid.appendChild(cnCard);
+      });
+    }
+  }
+
+  // Sync to Mobile Editor if active
+  syncToMobileEditor(note);
+}
+
+function buildBreadcrumbHtml(item) {
+  const crumbs = [];
+  let curr = item;
+
+  while (curr) {
+    crumbs.unshift({ id: curr.id, title: curr.title, type: curr.type });
+    if (!curr.parentId) break;
+    curr = appState.items.find(i => i.id === curr.parentId);
+  }
+
+  crumbs.unshift({ id: null, title: 'Library', type: 'root' });
+
+  return crumbs.map((c, idx) => {
+    const isLast = idx === crumbs.length - 1;
+    if (isLast) {
+      return `<span style="color:var(--text-main); font-weight:600;">${escapeHtml(c.title || 'Untitled')}</span>`;
+    }
+    return `
+      <span class="breadcrumb-item" onclick="onBreadcrumbClick('${c.id}')">${escapeHtml(c.title)}</span>
+      <span class="breadcrumb-separator">/</span>
+    `;
+  }).join('');
+}
+
+function onBreadcrumbClick(itemId) {
+  if (!itemId) {
+    setDesktopFolderFilter(null);
+    return;
+  }
+  const item = appState.items.find(i => i.id === itemId);
+  if (!item) return;
+  if (item.type === 'folder') {
+    setDesktopFolderFilter(item.id);
+  } else {
+    selectNote(item.id);
+  }
+}
+
+// Checklist Checkbox Interactive Toggle
+function attachChecklistListeners(container) {
+  const checkboxes = container.querySelectorAll('.task-checkbox');
+  checkboxes.forEach(cb => {
+    cb.onchange = (e) => {
+      const taskItem = cb.closest('.task-item');
+      if (taskItem) {
+        taskItem.classList.toggle('completed', cb.checked);
+        if (cb.checked) {
+          cb.setAttribute('checked', 'checked');
+        } else {
+          cb.removeAttribute('checked');
+        }
+      }
+      onNoteBodyInput();
+    };
+  });
+}
+
+function onNoteTitleInput(val) {
+  const note = appState.items.find(i => i.id === appState.selectedNoteId);
+  if (!note) return;
+  note.title = val;
+  triggerAutoSave();
+}
+
+function onNoteBodyInput() {
+  const note = appState.items.find(i => i.id === appState.selectedNoteId);
+  if (!note) return;
+  const bodyEl = document.getElementById('editorBody');
+  if (bodyEl) {
+    note.content = bodyEl.innerHTML;
+  }
+  triggerAutoSave();
+}
+
+function triggerAutoSave() {
+  const statusEl = document.getElementById('editorSaveStatus');
+  const mobStatusEl = document.getElementById('mobSaveStatus');
+  if (statusEl) {
+    statusEl.innerHTML = `<span style="color:var(--warning)">●</span> Saving...`;
+    statusEl.classList.add('saving');
+  }
+  if (mobStatusEl) mobStatusEl.textContent = 'Saving...';
+
+  clearTimeout(appState.saveTimer);
+  appState.saveTimer = setTimeout(async () => {
+    const note = appState.items.find(i => i.id === appState.selectedNoteId);
+    if (note) {
+      note.updatedAt = Date.now();
+      await dbSaveItem(note);
+      updateCountsAndTelemetry();
+      renderDesktopTree();
+      renderDesktopNotesCards();
+    }
+    const timeStr = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    if (statusEl) {
+      statusEl.innerHTML = `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"></polyline></svg> Saved locally (${timeStr})`;
+      statusEl.classList.remove('saving');
+    }
+    if (mobStatusEl) mobStatusEl.textContent = 'Saved';
+  }, 450);
+}
+
+// ==========================================
+// RICH TEXT FORMATTING COMMANDS
+// ==========================================
+function execCmd(command, value = null) {
+  document.execCommand(command, false, value);
+  const bodyEl = document.getElementById('editorBody');
+  if (bodyEl) bodyEl.focus();
+  onNoteBodyInput();
+}
+
+function formatHeading(val) {
+  if (val === 'p') {
+    document.execCommand('formatBlock', false, '<p>');
+  } else {
+    document.execCommand('formatBlock', false, `<${val}>`);
+  }
+  onNoteBodyInput();
+}
+
+function formatFontSize(val) {
+  document.execCommand('fontSize', false, val);
+  onNoteBodyInput();
+}
+
+function formatBlockquote() {
+  document.execCommand('formatBlock', false, '<blockquote>');
+  onNoteBodyInput();
+}
+
+function insertCodeSnippet() {
+  const sel = window.getSelection();
+  const text = sel ? sel.toString() : 'code';
+  const html = `<pre><code>${escapeHtml(text || '// Enter code')}</code></pre><p></p>`;
+  document.execCommand('insertHTML', false, html);
+  onNoteBodyInput();
+}
+
+function insertChecklistTask() {
+  const html = `<div class="task-item"><input type="checkbox" class="task-checkbox"> <span class="task-text">Task item</span></div><p></p>`;
+  document.execCommand('insertHTML', false, html);
+  const bodyEl = document.getElementById('editorBody');
+  if (bodyEl) attachChecklistListeners(bodyEl);
+  onNoteBodyInput();
+}
+
+function promptInsertLink() {
+  const url = prompt('Enter link URL (e.g. https://example.com):');
+  if (url) {
+    execCmd('createLink', url);
+  }
+}
+
+function toggleColorPalette(type) {
+  const textPop = document.getElementById('popoverTextColor');
+  const hlPop = document.getElementById('popoverHighlightColor');
+  if (type === 'text') {
+    textPop.classList.toggle('open');
+    hlPop.classList.remove('open');
+  } else {
+    hlPop.classList.toggle('open');
+    textPop.classList.remove('open');
+  }
+}
+
+function formatTextColor(color) {
+  document.execCommand('foreColor', false, color);
+  document.getElementById('popoverTextColor').classList.remove('open');
+  onNoteBodyInput();
+}
+
+function formatHighlightColor(color) {
+  document.execCommand('hiliteColor', false, color);
+  document.getElementById('popoverHighlightColor').classList.remove('open');
+  onNoteBodyInput();
+}
+
+// Close color popovers on outside click
+document.addEventListener('click', (e) => {
+  if (!e.target.closest('.color-dropdown-trigger')) {
+    const t = document.getElementById('popoverTextColor');
+    const h = document.getElementById('popoverHighlightColor');
+    if (t) t.classList.remove('open');
+    if (h) h.classList.remove('open');
+  }
+});
+
+// ==========================================
+// MEDIA ATTACHMENTS (IMAGE & PDF ENGINE)
+// ==========================================
+function triggerImportImage() {
+  document.getElementById('inputImageFile').click();
+}
+
+function triggerImportPDF() {
+  document.getElementById('inputPdfFile').click();
+}
+
+function handleImageFileSelected(input) {
+  const file = input.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = async (e) => {
+    await attachMediaToCurrentNote({
+      id: 'media-' + Date.now(),
+      type: 'image',
+      name: file.name,
+      dataUrl: e.target.result,
+      annotations: { paths: [], textBoxes: [] }
+    });
+    input.value = '';
+  };
+  reader.readAsDataURL(file);
+}
+
+function handlePdfFileSelected(input) {
+  const file = input.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = async (e) => {
+    await attachMediaToCurrentNote({
+      id: 'media-' + Date.now(),
+      type: 'pdf',
+      name: file.name,
+      dataUrl: e.target.result,
+      annotations: { paths: [], textBoxes: [] }
+    });
+    input.value = '';
+  };
+  reader.readAsDataURL(file);
+}
+
+async function attachMediaToCurrentNote(mediaItem) {
+  const note = appState.items.find(i => i.id === appState.selectedNoteId);
+  if (!note) {
+    showToast('Please select or create a note first');
+    return;
+  }
+  if (!note.media) note.media = [];
+  note.media.push(mediaItem);
+  note.updatedAt = Date.now();
+  await dbSaveItem(note);
+  refreshFullUI();
+  showToast(`Attached ${mediaItem.type === 'pdf' ? 'PDF document' : 'image'}: ${mediaItem.name}`);
+}
+
+function setupGlobalDragAndDrop() {
+  const dropZone = document.getElementById('editorDropZone');
+  if (!dropZone) return;
+
+  ['dragenter', 'dragover'].forEach(eventName => {
+    dropZone.addEventListener(eventName, (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      dropZone.style.border = '2px dashed var(--lime-primary)';
+    }, false);
+  });
+
+  ['dragleave', 'drop'].forEach(eventName => {
+    dropZone.addEventListener(eventName, (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      dropZone.style.border = 'none';
+    }, false);
+  });
+
+  dropZone.addEventListener('drop', (e) => {
+    const files = e.dataTransfer.files;
+    if (files && files.length > 0) {
+      const file = files[0];
+      if (file.type.startsWith('image/')) {
+        const reader = new FileReader();
+        reader.onload = (re) => {
+          attachMediaToCurrentNote({
+            id: 'media-' + Date.now(),
+            type: 'image',
+            name: file.name,
+            dataUrl: re.target.result,
+            annotations: { paths: [], textBoxes: [] }
+          });
+        };
+        reader.readAsDataURL(file);
+      } else if (file.type === 'application/pdf' || file.name.endsWith('.pdf')) {
+        const reader = new FileReader();
+        reader.onload = (re) => {
+          attachMediaToCurrentNote({
+            id: 'media-' + Date.now(),
+            type: 'pdf',
+            name: file.name,
+            dataUrl: re.target.result,
+            annotations: { paths: [], textBoxes: [] }
+          });
+        };
+        reader.readAsDataURL(file);
+      }
+    }
+  });
+}
+
+function renderMediaAttachments(note, container) {
+  container.innerHTML = '';
+  if (!note.media || note.media.length === 0) return;
+
+  note.media.forEach((media, idx) => {
+    const card = document.createElement('div');
+    card.className = 'media-item-card';
+
+    // Header with title and controls
+    const header = document.createElement('div');
+    header.className = 'media-item-header';
+    header.innerHTML = `
+      <div class="media-item-title">
+        ${media.type === 'pdf'
+          ? `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline></svg>`
+          : `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><circle cx="8.5" cy="8.5" r="1.5"></circle></svg>`}
+        <span>${escapeHtml(media.name)}</span>
+        <span class="badge-tag lime">${media.type.toUpperCase()}</span>
+      </div>
+      <div class="media-item-controls">
+        ${idx > 0 ? `<button class="btn btn-icon btn-sm" onclick="moveMediaPosition('${note.id}', ${idx}, -1)" title="Move Up">↑</button>` : ''}
+        ${idx < note.media.length - 1 ? `<button class="btn btn-icon btn-sm" onclick="moveMediaPosition('${note.id}', ${idx}, 1)" title="Move Down">↓</button>` : ''}
+        <button class="btn btn-sm btn-primary" onclick="openVisualAnnotationModal('${note.id}', '${media.id}')">
+          ✏️ Annotate
+        </button>
+        <button class="btn btn-icon btn-sm" style="color:var(--danger)" onclick="deleteMediaAttachment('${note.id}', '${media.id}')" title="Delete Attachment">
+          ×
+        </button>
+      </div>
+    `;
+    card.appendChild(header);
+
+    // Viewer Stage
+    const stage = document.createElement('div');
+    stage.className = 'media-viewer-stage';
+
+    if (media.type === 'image') {
+      const img = document.createElement('img');
+      img.className = 'media-img-element';
+      img.src = media.dataUrl;
+      stage.appendChild(img);
+
+      // Render overlay annotations
+      const overlay = renderAnnotationsDisplayOverlay(media);
+      stage.appendChild(overlay);
+    } else {
+      // PDF Viewer
+      const pdfWrap = document.createElement('div');
+      pdfWrap.style.width = '100%';
+      pdfWrap.style.display = 'flex';
+      pdfWrap.style.flexDirection = 'column';
+      pdfWrap.style.alignItems = 'center';
+
+      const canvas = document.createElement('canvas');
+      canvas.id = 'pdfCanvas_' + media.id;
+      canvas.style.maxWidth = '100%';
+      canvas.style.display = 'block';
+      pdfWrap.appendChild(canvas);
+
+      // Render PDF page
+      renderPdfPageToCanvas(media, canvas);
+
+      // Overlay annotations on PDF
+      const overlay = renderAnnotationsDisplayOverlay(media);
+      stage.appendChild(pdfWrap);
+      stage.appendChild(overlay);
+
+      // PDF Controls Bar
+      const pdfControls = document.createElement('div');
+      pdfControls.className = 'pdf-controls-bar';
+      const pdfState = getPdfState(media.id);
+      pdfControls.innerHTML = `
+        <button class="btn btn-sm" onclick="changePdfPage('${media.id}', -1)">◀ Prev</button>
+        <span class="pdf-page-display">Page ${pdfState.page} of ${pdfState.total || 1}</span>
+        <button class="btn btn-sm" onclick="changePdfPage('${media.id}', 1)">Next ▶</button>
+        <button class="btn btn-sm" onclick="zoomPdf('${media.id}', -0.25)" title="Zoom Out">−</button>
+        <span style="font-size:0.75rem; color:var(--text-tertiary);">${Math.round(pdfState.zoom * 100)}%</span>
+        <button class="btn btn-sm" onclick="zoomPdf('${media.id}', 0.25)" title="Zoom In">+</button>
+      `;
+      card.appendChild(pdfControls);
+    }
+
+    card.appendChild(stage);
+    container.appendChild(card);
+  });
+}
+
+function getPdfState(mediaId) {
+  if (!appState.pdfStates[mediaId]) {
+    appState.pdfStates[mediaId] = { page: 1, total: 1, zoom: 1.0 };
+  }
+  return appState.pdfStates[mediaId];
+}
+
+async function renderPdfPageToCanvas(media, canvas) {
+  const state = getPdfState(media.id);
+  
+  if (window.pdfjsLib && media.dataUrl) {
+    try {
+      const loadingTask = window.pdfjsLib.getDocument(media.dataUrl);
+      const pdf = await loadingTask.promise;
+      state.total = pdf.numPages;
+      const page = await pdf.getPage(state.page);
+      
+      const viewport = page.getViewport({ scale: 1.2 * state.zoom });
+      canvas.height = viewport.height;
+      canvas.width = viewport.width;
+
+      const renderContext = {
+        canvasContext: canvas.getContext('2d'),
+        viewport: viewport
+      };
+      await page.render(renderContext).promise;
+      return;
+    } catch (err) {
+      console.warn('PDF.js rendering note: Falling back to built-in vector preview', err);
+    }
+  }
+
+  // Built-in Offline PDF Vector/Canvas Fallback
+  canvas.width = 600 * state.zoom;
+  canvas.height = 780 * state.zoom;
+  const ctx = canvas.getContext('2d');
+  ctx.fillStyle = '#0f1c13';
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+  // Border & Header
+  ctx.strokeStyle = '#b8f627';
+  ctx.lineWidth = 2;
+  ctx.strokeRect(20, 20, canvas.width - 40, canvas.height - 40);
+
+  ctx.fillStyle = '#b8f627';
+  ctx.font = 'bold 20px sans-serif';
+  ctx.fillText('📄 ' + (media.name || 'PDF Document'), 40, 60);
+
+  ctx.fillStyle = '#9cb09f';
+  ctx.font = '14px sans-serif';
+  ctx.fillText('Offline Document Engine (Embedded Preview)', 40, 90);
+  ctx.fillText('Page ' + state.page + ' of ' + (state.total || 1), 40, 115);
+
+  ctx.fillStyle = 'rgba(184, 246, 39, 0.1)';
+  ctx.fillRect(40, 140, canvas.width - 80, 2);
+
+  // Mock document lines
+  ctx.fillStyle = 'rgba(255, 255, 255, 0.25)';
+  for (let i = 0; i < 14; i++) {
+    const w = (i % 3 === 0) ? (canvas.width - 160) : (canvas.width - 90);
+    ctx.fillRect(40, 160 + i * 28, w, 8);
+  }
+}
+
+function changePdfPage(mediaId, delta) {
+  const state = getPdfState(mediaId);
+  const newPage = state.page + delta;
+  if (newPage >= 1 && newPage <= state.total) {
+    state.page = newPage;
+    renderDesktopEditor();
+  }
+}
+
+function zoomPdf(mediaId, delta) {
+  const state = getPdfState(mediaId);
+  const newZoom = Math.max(0.5, Math.min(2.0, state.zoom + delta));
+  state.zoom = newZoom;
+  renderDesktopEditor();
+}
+
+async function moveMediaPosition(noteId, idx, delta) {
+  const note = appState.items.find(i => i.id === noteId);
+  if (!note || !note.media) return;
+  const targetIdx = idx + delta;
+  if (targetIdx < 0 || targetIdx >= note.media.length) return;
+  const item = note.media.splice(idx, 1)[0];
+  note.media.splice(targetIdx, 0, item);
+  await dbSaveItem(note);
+  refreshFullUI();
+}
+
+async function deleteMediaAttachment(noteId, mediaId) {
+  if (!confirm('Remove this attachment from the note?')) return;
+  const note = appState.items.find(i => i.id === noteId);
+  if (!note || !note.media) return;
+  note.media = note.media.filter(m => m.id !== mediaId);
+  await dbSaveItem(note);
+  refreshFullUI();
+  showToast('Attachment removed');
+}
+
+// Render static annotations overlay on normal note view
+function renderAnnotationsDisplayOverlay(media) {
+  const overlay = document.createElement('div');
+  overlay.className = 'annotations-display-layer';
+
+  if (!media.annotations) return overlay;
+
+  // Text boxes
+  (media.annotations.textBoxes || []).forEach(tb => {
+    const box = document.createElement('div');
+    box.className = 'rendered-text-box';
+    box.style.left = (tb.x * 100) + '%';
+    box.style.top = (tb.y * 100) + '%';
+    box.style.borderColor = tb.color || '#b8f627';
+    box.style.color = tb.color || '#b8f627';
+    box.textContent = tb.text;
+    overlay.appendChild(box);
+  });
+
+  return overlay;
+}
+
+// ==========================================
+// VISUAL ANNOTATION MODE CONTROLLER
+// ==========================================
+function openVisualAnnotationModal(noteId, mediaId) {
+  const note = appState.items.find(i => i.id === noteId);
+  if (!note || !note.media) return;
+  const media = note.media.find(m => m.id === mediaId);
+  if (!media) return;
+
+  appState.activeAnnotation = { noteId, mediaId };
+  appState.drawnPaths = JSON.parse(JSON.stringify(media.annotations?.paths || []));
+  appState.textBoxes = JSON.parse(JSON.stringify(media.annotations?.textBoxes || []));
+
+  const modal = document.getElementById('annotationModal');
+  const titleEl = document.getElementById('annotationMediaTitle');
+  const baseImg = document.getElementById('annotationBaseImg');
+  const drawCanvas = document.getElementById('annotationDrawCanvas');
+
+  titleEl.textContent = `${media.name} (${media.type.toUpperCase()})`;
+  modal.classList.add('active');
+
+  // Load image or PDF frame
+  if (media.type === 'image') {
+    baseImg.src = media.dataUrl;
+    baseImg.onload = () => setupAnnotationCanvasSize();
+  } else {
+    // PDF page snapshot to canvas
+    const pdfCanvas = document.getElementById('pdfCanvas_' + media.id);
+    if (pdfCanvas) {
+      baseImg.src = pdfCanvas.toDataURL();
+      baseImg.onload = () => setupAnnotationCanvasSize();
+    }
+  }
+
+  initAnnotationCanvasEvents(drawCanvas);
+}
+
+function setupAnnotationCanvasSize() {
+  const baseImg = document.getElementById('annotationBaseImg');
+  const drawCanvas = document.getElementById('annotationDrawCanvas');
+  const board = document.getElementById('annotationBoard');
+
+  const rect = baseImg.getBoundingClientRect();
+  drawCanvas.width = baseImg.naturalWidth || rect.width;
+  drawCanvas.height = baseImg.naturalHeight || rect.height;
+
+  redrawAnnotationPaths();
+  renderAnnotationTextBoxes();
+}
+
+function initAnnotationCanvasEvents(canvas) {
+  canvas.onmousedown = (e) => startDraw(e, canvas);
+  canvas.onmousemove = (e) => drawMove(e, canvas);
+  canvas.onmouseup = () => endDraw();
+  canvas.onmouseleave = () => endDraw();
+
+  // Touch support for mobile preview
+  canvas.ontouchstart = (e) => {
+    e.preventDefault();
+    const touch = e.touches[0];
+    startDraw(touch, canvas);
+  };
+  canvas.ontouchmove = (e) => {
+    e.preventDefault();
+    const touch = e.touches[0];
+    drawMove(touch, canvas);
+  };
+  canvas.ontouchend = () => endDraw();
+
+  // Board click to add text box when tool is 'text'
+  const board = document.getElementById('annotationBoard');
+  board.onclick = (e) => {
+    if (appState.annotationTool === 'text') {
+      const rect = board.getBoundingClientRect();
+      const x = (e.clientX - rect.left) / rect.width;
+      const y = (e.clientY - rect.top) / rect.height;
+      addAnnotationTextBox(x, y);
+    }
+  };
+}
+
+function startDraw(e, canvas) {
+  if (appState.annotationTool !== 'pen') return;
+  appState.isDrawing = true;
+  const rect = canvas.getBoundingClientRect();
+  const scaleX = canvas.width / rect.width;
+  const scaleY = canvas.height / rect.height;
+
+  const startX = (e.clientX - rect.left) * scaleX;
+  const startY = (e.clientY - rect.top) * scaleY;
+
+  appState.currentPath = {
+    color: appState.penColor,
+    width: appState.penWidth,
+    points: [{ x: startX / canvas.width, y: startY / canvas.height }]
+  };
+}
+
+function drawMove(e, canvas) {
+  if (!appState.isDrawing || !appState.currentPath) return;
+  const rect = canvas.getBoundingClientRect();
+  const scaleX = canvas.width / rect.width;
+  const scaleY = canvas.height / rect.height;
+
+  const ptX = (e.clientX - rect.left) * scaleX;
+  const ptY = (e.clientY - rect.top) * scaleY;
+
+  appState.currentPath.points.push({
+    x: ptX / canvas.width,
+    y: ptY / canvas.height
+  });
+
+  redrawAnnotationPaths();
+}
+
+function endDraw() {
+  if (appState.isDrawing && appState.currentPath) {
+    appState.drawnPaths.push(appState.currentPath);
+    appState.currentPath = null;
+  }
+  appState.isDrawing = false;
+  redrawAnnotationPaths();
+}
+
+function redrawAnnotationPaths() {
+  const canvas = document.getElementById('annotationDrawCanvas');
+  const ctx = canvas.getContext('2d');
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+  const allPaths = [...appState.drawnPaths];
+  if (appState.currentPath) allPaths.push(appState.currentPath);
+
+  allPaths.forEach(path => {
+    if (!path.points || path.points.length < 2) return;
+    ctx.beginPath();
+    ctx.strokeStyle = path.color || '#b8f627';
+    ctx.lineWidth = path.width || 4;
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+
+    const p0 = path.points[0];
+    ctx.moveTo(p0.x * canvas.width, p0.y * canvas.height);
+
+    for (let i = 1; i < path.points.length; i++) {
+      const pt = path.points[i];
+      ctx.lineTo(pt.x * canvas.width, pt.y * canvas.height);
+    }
+    ctx.stroke();
+  });
+}
+
+function setAnnotationTool(tool) {
+  appState.annotationTool = tool;
+  document.getElementById('toolBtnPen').classList.toggle('active', tool === 'pen');
+  document.getElementById('toolBtnText').classList.toggle('active', tool === 'text');
+}
+
+function undoAnnotationPath() {
+  if (appState.drawnPaths.length > 0) {
+    appState.drawnPaths.pop();
+    redrawAnnotationPaths();
+  }
+}
+
+function clearAnnotationCanvas() {
+  if (confirm('Clear all drawings and annotations?')) {
+    appState.drawnPaths = [];
+    appState.textBoxes = [];
+    redrawAnnotationPaths();
+    renderAnnotationTextBoxes();
+  }
+}
+
+// Draggable & Editable Text Box in Annotation Mode
+function addAnnotationTextBox(x, y) {
+  const tb = {
+    id: 'tb-' + Date.now(),
+    text: 'Note note',
+    x: Math.max(0.02, Math.min(0.85, x)),
+    y: Math.max(0.02, Math.min(0.85, y)),
+    color: '#b8f627'
+  };
+  appState.textBoxes.push(tb);
+  renderAnnotationTextBoxes();
+  setAnnotationTool('pen'); // Return to pen tool
+}
+
+function renderAnnotationTextBoxes() {
+  const layer = document.getElementById('annotationTextBoxesLayer');
+  layer.innerHTML = '';
+
+  appState.textBoxes.forEach(tb => {
+    const el = document.createElement('div');
+    el.className = 'draggable-text-box';
+    el.style.left = (tb.x * 100) + '%';
+    el.style.top = (tb.y * 100) + '%';
+    el.style.borderColor = tb.color || '#b8f627';
+
+    // Drag handle & Input
+    el.innerHTML = `
+      <span style="cursor:move; user-select:none; font-size:0.75rem;">⠿</span>
+      <input type="text" value="${escapeHtml(tb.text)}" oninput="updateAnnotationText('${tb.id}', this.value)">
+      <button class="draggable-text-del-btn" onclick="deleteAnnotationTextBox('${tb.id}')">×</button>
+    `;
+
+    // Drag logic
+    makeAnnotationBoxDraggable(el, tb);
+    layer.appendChild(el);
+  });
+}
+
+function makeAnnotationBoxDraggable(el, tb) {
+  let isDragging = false;
+  let startX = 0, startY = 0;
+
+  el.onmousedown = (e) => {
+    if (e.target.tagName === 'INPUT' || e.target.tagName === 'BUTTON') return;
+    isDragging = true;
+    startX = e.clientX;
+    startY = e.clientY;
+
+    const onMouseMove = (moveEv) => {
+      if (!isDragging) return;
+      const board = document.getElementById('annotationBoard');
+      const rect = board.getBoundingClientRect();
+      const deltaX = (moveEv.clientX - startX) / rect.width;
+      const deltaY = (moveEv.clientY - startY) / rect.height;
+
+      tb.x = Math.max(0.01, Math.min(0.9, tb.x + deltaX));
+      tb.y = Math.max(0.01, Math.min(0.9, tb.y + deltaY));
+
+      el.style.left = (tb.x * 100) + '%';
+      el.style.top = (tb.y * 100) + '%';
+
+      startX = moveEv.clientX;
+      startY = moveEv.clientY;
+    };
+
+    const onMouseUp = () => {
+      isDragging = false;
+      document.removeEventListener('mousemove', onMouseMove);
+      document.removeEventListener('mouseup', onMouseUp);
+    };
+
+    document.addEventListener('mousemove', onMouseMove);
+    document.addEventListener('mouseup', onMouseUp);
+  };
+}
+
+function updateAnnotationText(id, text) {
+  const tb = appState.textBoxes.find(t => t.id === id);
+  if (tb) tb.text = text;
+}
+
+function deleteAnnotationTextBox(id) {
+  appState.textBoxes = appState.textBoxes.filter(t => t.id !== id);
+  renderAnnotationTextBoxes();
+}
+
+async function saveAnnotationChanges() {
+  if (!appState.activeAnnotation) return;
+  const { noteId, mediaId } = appState.activeAnnotation;
+  const note = appState.items.find(i => i.id === noteId);
+  if (!note || !note.media) return;
+  const media = note.media.find(m => m.id === mediaId);
+  if (!media) return;
+
+  media.annotations = {
+    paths: appState.drawnPaths,
+    textBoxes: appState.textBoxes
+  };
+  note.updatedAt = Date.now();
+  await dbSaveItem(note);
+
+  document.getElementById('annotationModal').classList.remove('active');
+  appState.activeAnnotation = null;
+  refreshFullUI();
+  showToast('Annotations saved');
+}
+
+function cancelAnnotation() {
+  document.getElementById('annotationModal').classList.remove('active');
+  appState.activeAnnotation = null;
+}
+
+// ==========================================
+// UNLIMITED DEPTH: CRUD OPERATIONS
+// ==========================================
+async function promptCreateFolder(parentId = null) {
+  const name = prompt('Folder Name:', 'New Folder');
+  if (!name || !name.trim()) return;
+
+  const folder = {
+    id: 'f-' + Date.now(),
+    type: 'folder',
+    parentId: parentId || null,
+    title: name.trim(),
+    createdAt: Date.now(),
+    updatedAt: Date.now()
+  };
+
+  await dbSaveItem(folder);
+  appState.items.push(folder);
+  appState.selectedFolderId = folder.id;
+  refreshFullUI();
+  showToast(`Created folder "${folder.title}"`);
+}
+
+async function createNewNote(parentId = null) {
+  const note = {
+    id: 'n-' + Date.now(),
+    type: 'note',
+    parentId: parentId || null,
+    title: 'Untitled Note',
+    content: '<p></p>',
+    isPinned: false,
+    createdAt: Date.now(),
+    updatedAt: Date.now(),
+    media: []
+  };
+
+  await dbSaveItem(note);
+  appState.items.push(note);
+  selectNote(note.id);
+  refreshFullUI();
+  showToast('New note created');
+}
+
+async function createChildNote(parentNoteId) {
+  const parent = appState.items.find(i => i.id === parentNoteId);
+  const child = {
+    id: 'n-child-' + Date.now(),
+    type: 'note',
+    parentId: parentNoteId, // Note parent!
+    title: 'Child Note of ' + (parent ? parent.title : 'Parent'),
+    content: '<p>Child note body...</p>',
+    isPinned: false,
+    createdAt: Date.now(),
+    updatedAt: Date.now(),
+    media: []
+  };
+
+  await dbSaveItem(child);
+  appState.items.push(child);
+  selectNote(child.id);
+  refreshFullUI();
+  showToast('Created child note');
+}
+
+function createChildNoteForCurrent() {
+  if (!appState.selectedNoteId) return;
+  createChildNote(appState.selectedNoteId);
+}
+
+async function promptRenameItem(id) {
+  const item = appState.items.find(i => i.id === id);
+  if (!item) return;
+  const newName = prompt('Rename:', item.title);
+  if (newName && newName.trim()) {
+    item.title = newName.trim();
+    item.updatedAt = Date.now();
+    await dbSaveItem(item);
+    refreshFullUI();
+    showToast('Renamed successfully');
+  }
+}
+
+async function duplicateCurrentNote() {
+  const note = appState.items.find(i => i.id === appState.selectedNoteId);
+  if (!note) return;
+
+  const clone = {
+    ...JSON.parse(JSON.stringify(note)),
+    id: 'n-copy-' + Date.now(),
+    title: note.title + ' (Copy)',
+    createdAt: Date.now(),
+    updatedAt: Date.now()
+  };
+
+  await dbSaveItem(clone);
+  appState.items.push(clone);
+  selectNote(clone.id);
+  refreshFullUI();
+  showToast('Note duplicated');
+}
+
+async function togglePinCurrentNote() {
+  const note = appState.items.find(i => i.id === appState.selectedNoteId);
+  if (!note) return;
+  note.isPinned = !note.isPinned;
+  await dbSaveItem(note);
+  refreshFullUI();
+  showToast(note.isPinned ? 'Note pinned' : 'Note unpinned');
+}
+
+function confirmDeleteCurrentNote() {
+  if (!appState.selectedNoteId) return;
+  confirmDeleteItem(appState.selectedNoteId);
+}
+
+async function confirmDeleteItem(id) {
+  const item = appState.items.find(i => i.id === id);
+  if (!item) return;
+
+  // Check children
+  const children = appState.items.filter(i => i.parentId === id);
+  let msg = `Permanently delete "${item.title || 'Untitled'}"?`;
+  if (children.length > 0) {
+    msg += ` This will also delete ${children.length} nested child item(s).`;
+  }
+
+  if (confirm(msg)) {
+    await recursiveDeleteItem(id);
+    appState.items = await dbGetAllItems();
+
+    if (appState.selectedNoteId === id) {
+      const nextNote = appState.items.find(i => i.type === 'note');
+      appState.selectedNoteId = nextNote ? nextNote.id : null;
+    }
+    refreshFullUI();
+    showToast('Item deleted');
+  }
+}
+
+async function recursiveDeleteItem(id) {
+  const children = appState.items.filter(i => i.parentId === id);
+  for (const child of children) {
+    await recursiveDeleteItem(child.id);
+  }
+  await dbDeleteItem(id);
+}
+
+// ==========================================
+// MOVE ITEM MODAL (DESTINATION PICKER)
+// ==========================================
+function openMoveModal(itemId) {
+  appState.moveTargetItemId = itemId;
+  const modal = document.getElementById('modalMoveItem');
+  const treeContainer = document.getElementById('moveTreeOptions');
+  treeContainer.innerHTML = '';
+
+  // Root option
+  const rootOpt = document.createElement('div');
+  rootOpt.className = 'nav-link';
+  rootOpt.innerHTML = `<strong>📁 Library (Root Level)</strong>`;
+  rootOpt.onclick = () => selectMoveDestination(null);
+  treeContainer.appendChild(rootOpt);
+
+  // Render possible folders and notes (excluding self and descendants)
+  const invalidIds = getDescendantIds(itemId);
+  invalidIds.add(itemId);
+
+  const validParents = appState.items.filter(i => !invalidIds.has(i.id));
+
+  validParents.forEach(item => {
+    const opt = document.createElement('div');
+    opt.className = 'tree-item-row';
+    opt.style.padding = '6px 10px';
+    opt.innerHTML = `
+      <span style="color:${item.type === 'folder' ? 'var(--lime-primary)' : 'var(--text-secondary)'};">
+        ${item.type === 'folder' ? '📁' : '📝'}
+      </span>
+      <span>${escapeHtml(item.title || 'Untitled')}</span>
+      <span class="badge-tag" style="margin-left:auto;">${item.type}</span>
+    `;
+    opt.onclick = () => selectMoveDestination(item.id);
+    treeContainer.appendChild(opt);
+  });
+
+  modal.classList.add('active');
+}
+
+let pendingDestinationId = null;
+function selectMoveDestination(destId) {
+  pendingDestinationId = destId;
+  const items = document.querySelectorAll('#moveTreeOptions .tree-item-row, #moveTreeOptions .nav-link');
+  items.forEach(el => el.classList.remove('selected'));
+  if (event.currentTarget) event.currentTarget.classList.add('selected');
+}
+
+async function executeMoveItem() {
+  const item = appState.items.find(i => i.id === appState.moveTargetItemId);
+  if (!item) return;
+
+  item.parentId = pendingDestinationId;
+  item.updatedAt = Date.now();
+  await dbSaveItem(item);
+
+  closeModal('modalMoveItem');
+  refreshFullUI();
+  showToast(`Moved "${item.title}" successfully`);
+}
+
+function getDescendantIds(rootId) {
+  const descendants = new Set();
+  const queue = [rootId];
+  while (queue.length > 0) {
+    const curr = queue.shift();
+    const children = appState.items.filter(i => i.parentId === curr);
+    children.forEach(c => {
+      descendants.add(c.id);
+      queue.push(c.id);
+    });
+  }
+  return descendants;
+}
+
+// ==========================================
+// MOBILE APP NAVIGATION & SCREENS
+// ==========================================
+function switchMobileScreen(screenName) {
+  appState.mobileScreen = screenName;
+  document.querySelectorAll('.mobile-sub-screen').forEach(s => s.classList.remove('active'));
+  document.querySelectorAll('.mobile-dock-btn').forEach(b => b.classList.remove('active'));
+
+  const screenMap = {
+    library: 'mobileScreenLibrary',
+    folder: 'mobileScreenFolder',
+    editor: 'mobileScreenEditor',
+    search: 'mobileScreenSearch',
+    settings: 'mobileScreenSettings',
+    recent: 'mobileScreenLibrary' // maps to library view with recent focused
+  };
+
+  const dockMap = {
+    library: 'mobDockLibrary',
+    search: 'mobDockSearch',
+    recent: 'mobDockRecent',
+    settings: 'mobDockSettings'
+  };
+
+  const targetScreen = document.getElementById(screenMap[screenName]);
+  if (targetScreen) targetScreen.classList.add('active');
+
+  const targetDock = document.getElementById(dockMap[screenName]);
+  if (targetDock) targetDock.classList.add('active');
+
+  renderMobileScreens();
+}
+
+function backFromMobileEditor() {
+  if (appState.mobileFolderId) {
+    switchMobileScreen('folder');
+  } else {
+    switchMobileScreen('library');
+  }
+}
+
+function openMobileFolder(folderId) {
+  appState.mobileFolderId = folderId;
+  switchMobileScreen('folder');
+}
+
+function renderMobileScreens() {
+  // Mobile Library Screen
+  renderMobileLibrary();
+  // Mobile Folder Screen
+  if (appState.mobileScreen === 'folder') {
+    renderMobileFolder();
+  }
+  // Mobile Search Screen
+  if (appState.mobileScreen === 'search') {
+    renderMobileSearch();
+  }
+}
+
+function renderMobileLibrary() {
+  // Pinned Notes Carousel
+  const pinnedWrap = document.getElementById('mobPinnedContainer');
+  const pinned = appState.items.filter(i => i.type === 'note' && i.isPinned);
+  if (pinnedWrap) {
+    pinnedWrap.innerHTML = '';
+    if (pinned.length === 0) {
+      pinnedWrap.innerHTML = `<span style="font-size:0.75rem; color:var(--text-tertiary);">No pinned notes</span>`;
+    } else {
+      pinned.forEach(n => {
+        const card = document.createElement('div');
+        card.style.cssText = 'min-width:140px; background:var(--bg-surface); border:1px solid var(--lime-border); border-radius:var(--radius-sm); padding:10px; cursor:pointer; flex-shrink:0;';
+        card.onclick = () => selectNote(n.id);
+        card.innerHTML = `
+          <div style="font-size:0.8rem; font-weight:700; color:var(--text-main); white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${escapeHtml(n.title || 'Untitled')}</div>
+          <div style="font-size:0.68rem; color:var(--lime-primary); margin-top:4px;">★ Pinned</div>
+        `;
+        pinnedWrap.appendChild(card);
+      });
+    }
+  }
+
+  // Folders list
+  const foldersWrap = document.getElementById('mobFoldersContainer');
+  const rootFolders = appState.items.filter(i => i.type === 'folder' && i.parentId === null);
+  if (foldersWrap) {
+    foldersWrap.innerHTML = '';
+    rootFolders.forEach(f => {
+      const childCount = appState.items.filter(i => i.parentId === f.id).length;
+      const fItem = document.createElement('div');
+      fItem.className = 'tree-item-row';
+      fItem.style.padding = '10px 12px';
+      fItem.style.background = 'var(--bg-surface)';
+      fItem.style.borderRadius = 'var(--radius-sm)';
+      fItem.onclick = () => openMobileFolder(f.id);
+      fItem.innerHTML = `
+        <span style="color:var(--lime-primary); font-size:1.1rem;">📁</span>
+        <span style="font-weight:600; color:var(--text-main);">${escapeHtml(f.title)}</span>
+        <span class="badge-tag" style="margin-left:auto;">${childCount}</span>
+        <span style="color:var(--text-tertiary);">›</span>
+      `;
+      foldersWrap.appendChild(fItem);
+    });
+  }
+
+  // Recent Notes list
+  const recentWrap = document.getElementById('mobRecentContainer');
+  const recentNotes = [...appState.items.filter(i => i.type === 'note')].sort((a, b) => b.updatedAt - a.updatedAt).slice(0, 5);
+  if (recentWrap) {
+    recentWrap.innerHTML = '';
+    recentNotes.forEach(rn => {
+      const rItem = document.createElement('div');
+      rItem.className = 'note-card';
+      rItem.style.padding = '8px 12px';
+      rItem.onclick = () => selectNote(rn.id);
+      rItem.innerHTML = `
+        <div style="font-weight:600; font-size:0.85rem; color:var(--text-main);">${escapeHtml(rn.title || 'Untitled')}</div>
+        <div style="font-size:0.68rem; color:var(--text-tertiary);">${formatRelativeDate(rn.updatedAt)}</div>
+      `;
+      recentWrap.appendChild(rItem);
+    });
+  }
+}
+
+function renderMobileFolder() {
+  const folder = appState.items.find(i => i.id === appState.mobileFolderId);
+  const titleEl = document.getElementById('mobFolderTitle');
+  const subWrap = document.getElementById('mobFolderSubfolders');
+  const notesWrap = document.getElementById('mobFolderNotes');
+  if (titleEl) titleEl.textContent = folder ? folder.title : 'Folder';
+
+  const subfolders = appState.items.filter(i => i.type === 'folder' && i.parentId === appState.mobileFolderId);
+  const notes = appState.items.filter(i => i.type === 'note' && i.parentId === appState.mobileFolderId);
+
+  if (subWrap) {
+    subWrap.innerHTML = '';
+    subfolders.forEach(sf => {
+      const sfItem = document.createElement('div');
+      sfItem.className = 'tree-item-row';
+      sfItem.style.padding = '8px 12px';
+      sfItem.style.background = 'var(--bg-surface)';
+      sfItem.style.borderRadius = 'var(--radius-sm)';
+      sfItem.onclick = () => openMobileFolder(sf.id);
+      sfItem.innerHTML = `
+        <span style="color:var(--lime-primary);">📁</span>
+        <span>${escapeHtml(sf.title)}</span>
+        <span style="margin-left:auto; color:var(--text-tertiary);">›</span>
+      `;
+      subWrap.appendChild(sfItem);
+    });
+  }
+
+  if (notesWrap) {
+    notesWrap.innerHTML = '';
+    if (notes.length === 0) {
+      notesWrap.innerHTML = `<div style="font-size:0.75rem; color:var(--text-tertiary);">No notes in this folder yet.</div>`;
+    } else {
+      notes.forEach(n => {
+        const nItem = document.createElement('div');
+        nItem.className = 'note-card';
+        nItem.style.padding = '8px 12px';
+        nItem.onclick = () => selectNote(n.id);
+        nItem.innerHTML = `
+          <div style="font-weight:600; font-size:0.85rem; color:var(--text-main);">${escapeHtml(n.title || 'Untitled')}</div>
+          <div style="font-size:0.68rem; color:var(--text-tertiary);">${formatRelativeDate(n.updatedAt)}</div>
+        `;
+        notesWrap.appendChild(nItem);
+      });
+    }
+  }
+}
+
+function syncToMobileEditor(note) {
+  const mTitle = document.getElementById('mobEditorTitle');
+  const mBody = document.getElementById('mobEditorBody');
+  const mMedia = document.getElementById('mobEditorMedia');
+  const mSubGrid = document.getElementById('mobSubnotesList');
+
+  if (mTitle) mTitle.value = note.title || '';
+  if (mBody) {
+    mBody.innerHTML = note.content || '';
+    attachChecklistListeners(mBody);
+  }
+  if (mMedia) renderMediaAttachments(note, mMedia);
+
+  const childNotes = appState.items.filter(i => i.type === 'note' && i.parentId === note.id);
+  if (mSubGrid) {
+    mSubGrid.innerHTML = '';
+    childNotes.forEach(cn => {
+      const c = document.createElement('div');
+      c.className = 'tree-item-row';
+      c.style.padding = '8px';
+      c.style.background = 'var(--bg-surface)';
+      c.style.borderRadius = 'var(--radius-sm)';
+      c.onclick = () => selectNote(cn.id);
+      c.innerHTML = `<span>📝</span><span style="font-size:0.8rem;">${escapeHtml(cn.title)}</span>`;
+      mSubGrid.appendChild(c);
+    });
+  }
+}
+
+function onMobileSearchInput(query) {
+  const container = document.getElementById('mobSearchResults');
+  if (!container) return;
+  container.innerHTML = '';
+  if (!query.trim()) return;
+
+  const q = query.toLowerCase();
+  const matched = appState.items.filter(i => {
+    if (i.type !== 'note') return false;
+    const titleMatch = (i.title || '').toLowerCase().includes(q);
+    const bodyMatch = (i.content || '').replace(/<[^>]*>/g, '').toLowerCase().includes(q);
+    return titleMatch || bodyMatch;
+  });
+
+  matched.forEach(note => {
+    const card = document.createElement('div');
+    card.className = 'note-card';
+    card.style.padding = '8px 12px';
+    card.onclick = () => selectNote(note.id);
+    card.innerHTML = `
+      <div style="font-weight:700; font-size:0.85rem; color:var(--text-main);">${highlightText(escapeHtml(note.title), query)}</div>
+      <div style="font-size:0.75rem; color:var(--text-secondary); margin-top:2px;">${highlightText(escapeHtml((note.content || '').replace(/<[^>]*>/g, '').slice(0, 80)), query)}</div>
+    `;
+    container.appendChild(card);
+  });
+}
+
+// ==========================================
+// EXPORT & RESTORE BACKUP ENGINE
+// ==========================================
+async function exportAllAsZip() {
+  showToast('Preparing ZIP export with folder hierarchy...');
+  
+  // Use JSZip if available; otherwise use our built-in PureZipWriter
+  const useJSZip = !!window.JSZip;
+  const zip = useJSZip ? new window.JSZip() : new PureZipWriter();
+
+  const manifest = {
+    version: '1.0',
+    exportedAt: new Date().toISOString(),
+    itemCount: appState.items.length,
+    items: appState.items
+  };
+
+  // Add manifest.json
+  const manifestStr = JSON.stringify(manifest, null, 2);
+  if (useJSZip) {
+    zip.file('manifest.json', manifestStr);
+  } else {
+    zip.addFile('manifest.json', manifestStr);
+  }
+
+  // Build folder hierarchy and files
+  appState.items.filter(i => i.type === 'note').forEach(note => {
+    const folderPath = getFullFolderPath(note.parentId);
+    const safeTitle = (note.title || 'Untitled').replace(/[\\/:*?"<>|]/g, '_');
+    const noteMd = generateMarkdownForNote(note);
+    const noteHtml = generateHtmlForNote(note);
+
+    const mdPath = folderPath + safeTitle + '.md';
+    const htmlPath = folderPath + safeTitle + '.html';
+
+    if (useJSZip) {
+      zip.file(mdPath, noteMd);
+      zip.file(htmlPath, noteHtml);
+    } else {
+      zip.addFile(mdPath, noteMd);
+      zip.addFile(htmlPath, noteHtml);
+    }
+
+    // Export media attachments into assets/
+    if (note.media && note.media.length > 0) {
+      note.media.forEach((m, mIdx) => {
+        const assetPath = `assets/${m.id}_${m.name}`;
+        if (m.dataUrl.startsWith('data:')) {
+          const base64Data = m.dataUrl.split(',')[1];
+          if (useJSZip) {
+            zip.file(assetPath, base64Data, { base64: true });
+          } else {
+            // Convert base64 to Uint8Array for PureZipWriter
+            const binary = atob(base64Data);
+            const bytes = new Uint8Array(binary.length);
+            for (let b = 0; b < binary.length; b++) bytes[b] = binary.charCodeAt(b);
+            zip.addFile(assetPath, bytes);
+          }
+        }
+      });
+    }
+  });
+
+  // Generate ZIP blob
+  let blob;
+  if (useJSZip) {
+    blob = await zip.generateAsync({ type: 'blob' });
+  } else {
+    blob = zip.generateBlob();
+  }
+
+  // Trigger Download
+  const filename = `SmartNotes-Backup-${new Date().toISOString().slice(0, 10)}.zip`;
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+
+  showToast(`Exported ${appState.items.length} items to ${filename}`);
+}
+
+function getFullFolderPath(parentId) {
+  if (!parentId) return '';
+  const parts = [];
+  let curr = appState.items.find(i => i.id === parentId);
+  while (curr) {
+    parts.unshift(curr.title.replace(/[\\/:*?"<>|]/g, '_'));
+    if (!curr.parentId) break;
+    curr = appState.items.find(i => i.id === curr.parentId);
+  }
+  return parts.length > 0 ? parts.join('/') + '/' : '';
+}
+
+function generateMarkdownForNote(note) {
+  const plain = (note.content || '')
+    .replace(/<h1>(.*?)<\/h1>/gi, '# $1\n\n')
+    .replace(/<h2>(.*?)<\/h2>/gi, '## $1\n\n')
+    .replace(/<h3>(.*?)<\/h3>/gi, '### $1\n\n')
+    .replace(/<blockquote>(.*?)<\/blockquote>/gi, '> $1\n\n')
+    .replace(/<li>(.*?)<\/li>/gi, '- $1\n')
+    .replace(/<p>(.*?)<\/p>/gi, '$1\n\n')
+    .replace(/<strong>(.*?)<\/strong>/gi, '**$1**')
+    .replace(/<em>(.*?)<\/em>/gi, '*$1*')
+    .replace(/<[^>]*>/g, '');
+
+  return `---
+title: "${note.title || 'Untitled'}"
+id: "${note.id}"
+parentId: "${note.parentId || ''}"
+createdAt: "${new Date(note.createdAt).toISOString()}"
+updatedAt: "${new Date(note.updatedAt).toISOString()}"
+isPinned: ${!!note.isPinned}
+---
+
+${plain}`;
+}
+
+function generateHtmlForNote(note) {
+  return `<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>${escapeHtml(note.title)}</title>
+  <style>
+    body { font-family: sans-serif; max-width: 720px; margin: 2rem auto; padding: 0 1rem; color: #222; }
+    h1 { color: #1b5e20; }
+    blockquote { border-left: 3px solid #4caf50; margin: 1rem 0; padding-left: 1rem; color: #555; }
+  </style>
+</head>
+<body>
+  <h1>${escapeHtml(note.title)}</h1>
+  <div>${note.content || ''}</div>
+</body>
+</html>`;
+}
+
+function triggerRestoreBackup() {
+  document.getElementById('inputRestoreBackup').click();
+}
+
+async function handleRestoreBackupSelected(input) {
+  const file = input.files[0];
+  if (!file) return;
+
+  if (file.name.endsWith('.json')) {
+    const text = await file.text();
+    try {
+      const manifest = JSON.parse(text);
+      if (manifest.items && Array.isArray(manifest.items)) {
+        if (confirm(`Restore ${manifest.items.length} items from this backup?`)) {
+          await dbClearAll();
+          for (const it of manifest.items) {
+            await dbSaveItem(it);
+          }
+          appState.items = await dbGetAllItems();
+          appState.selectedNoteId = appState.items.find(i => i.type === 'note')?.id || null;
+          refreshFullUI();
+          showToast(`Successfully restored ${manifest.items.length} items!`);
+        }
+      }
+    } catch (err) {
+      alert('Invalid backup JSON: ' + err.message);
+    }
+  } else if (file.name.endsWith('.zip')) {
+    if (window.JSZip) {
+      try {
+        const zip = await window.JSZip.loadAsync(file);
+        const manifestFile = zip.file('manifest.json');
+        if (manifestFile) {
+          const manifestText = await manifestFile.async('text');
+          const manifest = JSON.parse(manifestText);
+          if (confirm(`Restore ${manifest.items.length} items from ZIP backup?`)) {
+            await dbClearAll();
+            for (const it of manifest.items) {
+              await dbSaveItem(it);
+            }
+            appState.items = await dbGetAllItems();
+            appState.selectedNoteId = appState.items.find(i => i.type === 'note')?.id || null;
+            refreshFullUI();
+            showToast(`Restored ${manifest.items.length} items from ZIP!`);
+          }
+        } else {
+          alert('ZIP archive missing manifest.json');
+        }
+      } catch (err) {
+        alert('Error parsing ZIP: ' + err.message);
+      }
+    } else {
+      alert('JSZip required for ZIP restore. Try restoring a manifest.json file directly.');
+    }
+  }
+  input.value = '';
+}
+
+// ==========================================
+// CONFLICT RESOLUTION SIMULATOR (DEMO)
+// ==========================================
+function openConflictModal() {
+  document.getElementById('modalConflict').classList.add('active');
+}
+
+async function resolveConflictDemo(choice) {
+  closeModal('modalConflict');
+  const specNote = appState.items.find(i => i.id === 'n-sync-spec');
+  if (specNote) {
+    if (choice === 'mine') {
+      specNote.content += `<p><strong>[Conflict Resolved]:</strong> Preserved Local Pixel 9 Pro version.</p>`;
+    } else if (choice === 'theirs') {
+      specNote.content += `<p><strong>[Conflict Resolved]:</strong> Applied Cloud MacBook Pro M3 version.</p>`;
+    } else {
+      specNote.content += `<p><strong>[Merged Changes]:</strong> Integrated remote edits alongside local draft cleanly.</p>`;
+    }
+    await dbSaveItem(specNote);
+    refreshFullUI();
+  }
+  showToast(`Conflict resolved: ${choice === 'merge' ? 'Merged both copies' : 'Preserved chosen version'}`);
+}
+
+function openSyncModal() {
+  document.getElementById('modalSyncInfo').classList.add('active');
+}
+
+function openSettingsModal() {
+  document.getElementById('modalSettings').classList.add('active');
+}
+
+function closeModal(modalId) {
+  document.getElementById(modalId).classList.remove('active');
+}
+
+async function resetToSampleData() {
+  if (confirm('Reset entire library to default sample folders and notes?')) {
+    await dbClearAll();
+    const sample = getInitialSampleData();
+    for (const item of sample) {
+      await dbSaveItem(item);
+    }
+    appState.items = await dbGetAllItems();
+    appState.selectedNoteId = 'n-welcome';
+    appState.selectedFolderId = null;
+    refreshFullUI();
+    closeModal('modalSettings');
+    showToast('Library reset to sample data');
+  }
+}
+
+async function wipeAllData() {
+  if (confirm('WARNING: Permanently wipe all folders, notes, and attachments? This cannot be undone.')) {
+    await dbClearAll();
+    appState.items = [];
+    appState.selectedNoteId = null;
+    appState.selectedFolderId = null;
+    refreshFullUI();
+    closeModal('modalSettings');
+    showToast('All data erased');
+  }
+}
+
+// ==========================================
+// KEYBOARD SHORTCUTS
+// ==========================================
+function setupKeyboardShortcuts() {
+  document.addEventListener('keydown', (e) => {
+    // Ctrl+S: Instant save toast
+    if ((e.ctrlKey || e.metaKey) && e.key === 's') {
+      e.preventDefault();
+      triggerAutoSave();
+      showToast('Document saved');
+    }
+    // Ctrl+F: Focus search
+    if ((e.ctrlKey || e.metaKey) && e.key === 'f') {
+      e.preventDefault();
+      const s = document.getElementById('desktopSearchInput');
+      if (s) s.focus();
+    }
+    // Esc: Exit modal or focus mode
+    if (e.key === 'Escape') {
+      document.querySelectorAll('.modal-backdrop').forEach(m => m.classList.remove('active'));
+      const annoModal = document.getElementById('annotationModal');
+      if (annoModal && annoModal.classList.contains('active')) {
+        cancelAnnotation();
+      }
+      if (appState.isZenMode) {
+        toggleZenFocusMode();
+      }
+    }
+  });
+}
+
+// ==========================================
+// UTILITY FUNCTIONS
+// ==========================================
+function escapeHtml(str) {
+  if (!str) return '';
+  return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
+function highlightText(text, query) {
+  if (!query || !query.trim()) return text;
+  const escaped = query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const reg = new RegExp(`(${escaped})`, 'gi');
+  return text.replace(reg, '<mark class="search-match">$1</mark>');
+}
+
+function formatRelativeDate(timestamp) {
+  if (!timestamp) return 'Just now';
+  const diff = Date.now() - timestamp;
+  const mins = Math.floor(diff / 60000);
+  if (mins < 1) return 'Just now';
+  if (mins < 60) return `${mins}m ago`;
+  const hours = Math.floor(mins / 60);
+  if (hours < 24) return `${hours}h ago`;
+  const days = Math.floor(hours / 24);
+  if (days < 7) return `${days}d ago`;
+  return new Date(timestamp).toLocaleDateString();
+}
+
+function showToast(message) {
+  const container = document.getElementById('toastContainer');
+  if (!container) return;
+  const toast = document.createElement('div');
+  toast.className = 'toast-pill';
+  toast.innerHTML = `<span style="color:var(--lime-primary)">●</span> ${escapeHtml(message)}`;
+  container.appendChild(toast);
+  setTimeout(() => {
+    toast.style.opacity = '0';
+    toast.style.transition = 'opacity 0.3s ease';
+    setTimeout(() => toast.remove(), 300);
+  }, 2800);
+}
+
+console.log('Smart Notes Engine initialized successfully.');
+</script>
+</body>
+</html>

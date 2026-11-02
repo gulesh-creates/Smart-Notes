@@ -1,0 +1,14 @@
+{
+  "java.import.gradle.java.home": "C:\\Program Files\\Eclipse Adoptium\\jdk-21.0.11.10-hotspot",
+  "java.import.gradle.enabled": false,
+  "java.gradle.buildServer.enabled": "off",
+  "gradle.autoDetect": "off",
+  "java.import.exclusions": [
+    "**/node_modules/**",
+    "**/.metadata/**",
+    "**/archetype-resources/**",
+    "**/META-INF/maven/**",
+    "**/packages/client/android/**",
+    "**/android/**"
+  ]
+}

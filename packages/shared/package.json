@@ -1,0 +1,16 @@
+{
+  "name": "@smartnotes/shared",
+  "version": "1.0.0",
+  "description": "Smart Notes shared data contracts, validation, and utilities",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "tsc",
+    "test": "node --test dist/**/*.test.js"
+  },
+  "dependencies": {},
+  "devDependencies": {
+    "typescript": "^5.7.3"
+  }
+}
+

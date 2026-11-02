@@ -1,0 +1,9 @@
+{
+  "appId": "com.smartnotes.app",
+  "appName": "Smart Notes",
+  "webDir": "dist",
+  "server": {
+    "androidScheme": "https"
+  }
+}
+

@@ -1,0 +1,305 @@
+/* Smart Notes Design System — Reference 3 Visual Direction */
+
+:root {
+  /* Common Geometry & Fonts */
+  --font-sans: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, 'Inter', 'Segoe UI', Roboto, sans-serif;
+  --font-mono: 'JetBrains Mono', Menlo, Consolas, monospace;
+  
+  --radius-xs: 6px;
+  --radius-sm: 10px;
+  --radius-md: 16px;
+  --radius-card: 20px;
+  --radius-card-lg: 26px;
+  --radius-pill: 9999px;
+  
+  --transition-fast: 0.15s cubic-bezier(0.4, 0, 0.2, 1);
+  --transition-normal: 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+  
+  --header-height: 58px;
+  --sidebar-w: 260px;
+  --notes-list-w: 320px;
+  
+  --lime-primary: #B9F32A;
+  --lime-hover: #C8F946;
+  --lime-pale: #E7F9B5;
+  --lime-glow: rgba(185, 243, 42, 0.35);
+  --lime-muted: rgba(185, 243, 42, 0.16);
+
+  --danger: #EF4444;
+  --danger-bg: rgba(239, 68, 68, 0.12);
+  --warning: #F59E0B;
+  --info: #0284C7;
+}
+
+/* Light Theme (Default) */
+:root, [data-theme="light"] {
+  --bg-canvas: #F6F7F3;
+  --bg-surface: #FFFFFF;
+  --bg-surface-elevated: #F8FAF7;
+  --bg-surface-subtle: #EDF1E8;
+  --bg-surface-glass: rgba(255, 255, 255, 0.88);
+  --bg-card: #FFFFFF;
+  --bg-card-hover: #F8FAF7;
+  --bg-card-active: #EEF3E9;
+  
+  --card-dark-accent: #12241A;
+  --card-dark-text: #FFFFFF;
+
+  --text-main: #17211A;
+  --text-secondary: #637067;
+  --text-tertiary: #92A396;
+  --text-on-lime: #12241A;
+
+  --border-subtle: #E2E8DE;
+  --border-medium: #D1D9CB;
+  --border-focus: #B9F32A;
+
+  --shadow-sm: 0 2px 8px rgba(0, 0, 0, 0.03);
+  --shadow-md: 0 8px 24px rgba(0, 0, 0, 0.05);
+  --shadow-lg: 0 16px 40px rgba(0, 0, 0, 0.08);
+  --shadow-float: 0 12px 32px rgba(18, 36, 26, 0.08);
+
+  --toolbar-bg: #FFFFFF;
+  --editor-canvas: #FFFFFF;
+}
+
+/* Dark Theme (Companion) */
+[data-theme="dark"] {
+  --bg-canvas: #0E1410;
+  --bg-surface: #161F18;
+  --bg-surface-elevated: #1D2920;
+  --bg-surface-subtle: #19251B;
+  --bg-surface-glass: rgba(22, 31, 24, 0.88);
+  --bg-card: #18231A;
+  --bg-card-hover: #1E2D22;
+  --bg-card-active: #233427;
+
+  --card-dark-accent: #0A100C;
+  --card-dark-text: #F5F8F3;
+
+  --text-main: #F5F8F3;
+  --text-secondary: #9CB09F;
+  --text-tertiary: #5F7363;
+  --text-on-lime: #0E1410;
+
+  --border-subtle: rgba(255, 255, 255, 0.08);
+  --border-medium: rgba(255, 255, 255, 0.15);
+  --border-focus: #B9F32A;
+
+  --shadow-sm: 0 2px 8px rgba(0, 0, 0, 0.25);
+  --shadow-md: 0 8px 24px rgba(0, 0, 0, 0.35);
+  --shadow-lg: 0 16px 40px rgba(0, 0, 0, 0.5);
+  --shadow-float: 0 12px 32px rgba(0, 0, 0, 0.6);
+
+  --toolbar-bg: #161F18;
+  --editor-canvas: #121A14;
+}
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+  -webkit-font-smoothing: antialiased;
+}
+
+body {
+  font-family: var(--font-sans);
+  background-color: var(--bg-canvas);
+  color: var(--text-main);
+  min-height: 100vh;
+  overflow-x: hidden;
+  transition: background-color var(--transition-normal), color var(--transition-normal);
+}
+
+button, input, textarea, select {
+  font-family: inherit;
+}
+
+/* Scrollbars */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--border-medium);
+  border-radius: var(--radius-pill);
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--lime-primary);
+}
+
+/* Common Layout Buttons */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 9px 18px;
+  border-radius: var(--radius-pill);
+  font-size: 0.86rem;
+  font-weight: 600;
+  border: 1px solid var(--border-subtle);
+  background: var(--bg-surface);
+  color: var(--text-main);
+  cursor: pointer;
+  transition: all var(--transition-fast);
+  white-space: nowrap;
+  min-height: 40px;
+}
+
+.btn:hover {
+  background: var(--bg-surface-elevated);
+  border-color: var(--border-medium);
+  transform: translateY(-1px);
+}
+
+.btn:active {
+  transform: translateY(0);
+}
+
+.btn-primary {
+  background: var(--lime-primary);
+  border-color: var(--lime-primary);
+  color: var(--text-on-lime);
+  box-shadow: 0 4px 14px var(--lime-glow);
+}
+
+.btn-primary:hover {
+  background: var(--lime-hover);
+  border-color: var(--lime-hover);
+  box-shadow: 0 6px 20px var(--lime-glow);
+}
+
+.btn-icon {
+  width: 40px;
+  height: 40px;
+  padding: 0;
+  border-radius: var(--radius-pill);
+  flex-shrink: 0;
+}
+
+.btn-sm {
+  padding: 5px 12px;
+  font-size: 0.78rem;
+  min-height: 32px;
+  border-radius: var(--radius-pill);
+}
+
+.btn-icon.btn-sm {
+  width: 32px;
+  height: 32px;
+  min-height: 32px;
+  max-height: 32px;
+  padding: 0;
+}
+
+/* Sidebar Tree Navigation & Action Buttons */
+.tree-node-item {
+  position: relative;
+}
+
+.tree-row {
+  position: relative;
+}
+
+.tree-row:hover:not(.selected):not(.active-parent-folder):not(.active-folder-direct) {
+  background: var(--bg-surface-subtle) !important;
+  color: var(--text-main) !important;
+}
+
+.tree-row-actions {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity var(--transition-fast);
+}
+
+.tree-row:hover .tree-row-actions,
+.tree-row.selected .tree-row-actions,
+.tree-row.active-parent-folder .tree-row-actions,
+.tree-row.active-folder-direct .tree-row-actions {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.tree-action-btn {
+  width: 24px;
+  height: 24px;
+  min-height: 24px;
+  max-height: 24px;
+  padding: 0;
+  margin: 0;
+  border-radius: var(--radius-xs);
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--text-secondary);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all var(--transition-fast);
+  flex-shrink: 0;
+}
+
+.tree-action-btn:hover {
+  background: var(--bg-surface-elevated);
+  border-color: var(--border-medium);
+  color: var(--text-main);
+  transform: translateY(-1px);
+}
+
+.tree-action-btn:active {
+  transform: translateY(0);
+}
+
+.tree-action-btn.tree-action-delete:hover {
+  background: var(--danger-bg);
+  border-color: var(--danger);
+  color: var(--danger);
+}
+
+/* Selected item (lime highlight) actions styling */
+.tree-row.selected .tree-action-btn {
+  color: var(--text-on-lime);
+  background: transparent;
+}
+
+.tree-row.selected .tree-action-btn:hover {
+  background: rgba(18, 36, 26, 0.14);
+  border-color: rgba(18, 36, 26, 0.28);
+  color: var(--text-on-lime);
+}
+
+.tree-row.selected .tree-action-btn.tree-action-delete:hover {
+  background: rgba(220, 38, 38, 0.22);
+  border-color: rgba(220, 38, 38, 0.4);
+  color: #991B1B;
+}
+
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 10px;
+  border-radius: var(--radius-pill);
+  font-size: 0.72rem;
+  font-weight: 700;
+  background: var(--bg-surface-subtle);
+  color: var(--text-secondary);
+}
+
+.badge-lime {
+  background: var(--lime-pale);
+  color: #12241A;
+}
+
+[data-theme="dark"] .badge-lime {
+  background: var(--lime-muted);
+  color: var(--lime-primary);
+}
+
