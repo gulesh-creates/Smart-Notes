@@ -40,6 +40,8 @@ packages/client/android/.cxx/
 packages/client/android/app/lint-baseline.xml
 *.apk
 *.aab
+*.exe
+release/
 
 # Logs
 logs/

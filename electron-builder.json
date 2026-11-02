@@ -1,0 +1,37 @@
+{
+  "appId": "com.smartnotes.desktop",
+  "productName": "Smart Notes",
+  "directories": {
+    "output": "release"
+  },
+  "files": [
+    "electron/**/*",
+    {
+      "from": "packages/client/dist",
+      "to": "electron/dist",
+      "filter": ["**/*"]
+    }
+  ],
+  "extraMetadata": {
+    "main": "electron/main.cjs"
+  },
+  "win": {
+    "target": [
+      {
+        "target": "nsis",
+        "arch": ["x64"]
+      },
+      {
+        "target": "portable",
+        "arch": ["x64"]
+      }
+    ]
+  },
+  "nsis": {
+    "oneClick": true,
+    "perMachine": false,
+    "createDesktopShortcut": true,
+    "createStartMenuShortcut": true,
+    "shortcutName": "Smart Notes"
+  }
+}
