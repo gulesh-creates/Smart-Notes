@@ -303,3 +303,23 @@ button, input, textarea, select {
   color: var(--lime-primary);
 }
 
+/* Disable native browser spellcheck red squiggly / wavy error underlines for clean Notepad */
+::spelling-error {
+  text-decoration: none !important;
+  background: transparent !important;
+  color: inherit !important;
+}
+
+::grammar-error {
+  text-decoration: none !important;
+  background: transparent !important;
+  color: inherit !important;
+}
+
+.note-rich-body,
+.note-title-input {
+  /* Prevent browser from marking Hinglish or custom spellings as errors */
+  -webkit-spellcheck: false;
+}
+
+

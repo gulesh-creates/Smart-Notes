@@ -115,7 +115,7 @@ export const RichEditor: React.FC<RichEditorProps> = ({
   };
 
   const insertChecklist = () => {
-    const html = `<div class="task-item" style="display:flex; align-items:flex-start; gap:8px; margin:4px 0;"><input type="checkbox" class="task-checkbox" style="width:18px; height:18px; margin-top:3px; accent-color:#B9F32A;" /> <span class="task-text" contenteditable="true">Checklist item</span></div><p><br/></p>`;
+    const html = `<div class="task-item" style="display:flex; align-items:flex-start; gap:8px; margin:4px 0;"><input type="checkbox" class="task-checkbox" style="width:18px; height:18px; margin-top:3px; accent-color:#B9F32A;" /> <span class="task-text" contenteditable="true" spellcheck="false">Checklist item</span></div><p><br/></p>`;
     document.execCommand('insertHTML', false, html);
     attachChecklistListeners();
     handleBodyChange();
@@ -324,6 +324,11 @@ export const RichEditor: React.FC<RichEditorProps> = ({
             value={note.title}
             onChange={handleTitleChange}
             placeholder="Untitled Note"
+            spellCheck={false}
+            autoCorrect="off"
+            autoCapitalize="off"
+            data-gramm="false"
+            data-enable-grammarly="false"
             style={{
               fontSize: '2.1rem',
               fontWeight: 800,
@@ -347,6 +352,11 @@ export const RichEditor: React.FC<RichEditorProps> = ({
             ref={bodyRef}
             contentEditable
             suppressContentEditableWarning
+            spellCheck={false}
+            autoCorrect="off"
+            autoCapitalize="off"
+            data-gramm="false"
+            data-enable-grammarly="false"
             className="note-rich-body"
             onInput={handleBodyChange}
             style={{

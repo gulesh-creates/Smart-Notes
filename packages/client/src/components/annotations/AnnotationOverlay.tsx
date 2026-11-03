@@ -337,6 +337,8 @@ export const AnnotationOverlay: React.FC<AnnotationOverlayProps> = ({
             <input
               type="text"
               value={tb.text}
+              spellCheck={false}
+              autoCorrect="off"
               style={{
                 border: 'none',
                 background: 'transparent',

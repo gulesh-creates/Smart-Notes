@@ -106,6 +106,8 @@ export const NoteList: React.FC<NoteListProps> = ({
             value={searchQuery}
             onChange={e => onSearchChange(e.target.value)}
             placeholder="Search notes & content..."
+            spellCheck={false}
+            autoCorrect="off"
             style={{
               width: '100%',
               background: 'var(--bg-surface)',
