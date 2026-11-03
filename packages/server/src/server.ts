@@ -31,4 +31,6 @@ if (require.main === module) {
   });
 }
 
+// Support both ESM and CommonJS for Vercel serverless functions
+module.exports = app;
 export default app;
