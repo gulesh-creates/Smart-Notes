@@ -18,6 +18,8 @@ dist/
 build/
 */dist/
 */*/dist/
+!packages/shared/dist/
+!packages/shared/dist/**
 */build/
 */*/build/
 

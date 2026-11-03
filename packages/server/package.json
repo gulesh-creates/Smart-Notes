@@ -4,6 +4,7 @@
   "description": "Smart Notes Sync & Authentication Backend Service",
   "main": "dist/server.js",
   "scripts": {
+    "prebuild": "npm --prefix ../shared run build",
     "build": "tsc",
     "start": "node dist/server.js",
     "dev": "node dist/server.js",
