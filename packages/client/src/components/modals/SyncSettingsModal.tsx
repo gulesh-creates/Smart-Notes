@@ -201,7 +201,20 @@ export const SyncSettingsModal: React.FC<SyncSettingsModalProps> = ({
         </div>
 
         {/* Navigation Tabs */}
-        <div style={{ display: 'flex', borderBottom: '1px solid var(--border-subtle)', background: 'var(--bg-surface-subtle)', padding: '0 16px' }}>
+        <div
+          className="settings-modal-tabs"
+          style={{
+            display: 'flex',
+            borderBottom: '1px solid var(--border-subtle)',
+            background: 'var(--bg-surface-subtle)',
+            padding: '0 8px',
+            overflowX: 'auto',
+            whiteSpace: 'nowrap',
+            WebkitOverflowScrolling: 'touch',
+            scrollbarWidth: 'none',
+            flexShrink: 0
+          }}
+        >
           {[
             { id: 'account', label: 'Cloud Account' },
             { id: 'appearance', label: 'Appearance' },
@@ -219,7 +232,9 @@ export const SyncSettingsModal: React.FC<SyncSettingsModalProps> = ({
                 fontWeight: activeTab === tab.id ? 700 : 500,
                 color: activeTab === tab.id ? 'var(--text-main)' : 'var(--text-secondary)',
                 borderBottom: activeTab === tab.id ? '2px solid var(--lime-primary)' : '2px solid transparent',
-                cursor: 'pointer'
+                cursor: 'pointer',
+                flexShrink: 0,
+                whiteSpace: 'nowrap'
               }}
               onClick={() => setActiveTab(tab.id as any)}
             >

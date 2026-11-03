@@ -322,4 +322,55 @@ button, input, textarea, select {
   -webkit-spellcheck: false;
 }
 
+/* Mobile-optimized Notepad & UI layout customization */
+@media (max-width: 860px) {
+  .editor-formatting-toolbar {
+    padding: 6px 8px !important;
+    gap: 4px !important;
+    overflow-x: auto !important;
+    flex-wrap: nowrap !important;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+  }
+  .editor-formatting-toolbar::-webkit-scrollbar,
+  .settings-modal-tabs::-webkit-scrollbar {
+    display: none;
+  }
+
+  .editor-scroll-body {
+    padding: 0 !important;
+    background: var(--bg-surface) !important;
+  }
+
+  .document-paper {
+    border-radius: 0 !important;
+    border: none !important;
+    box-shadow: none !important;
+    padding: 16px 16px 90px 16px !important;
+    max-width: 100% !important;
+    width: 100% !important;
+  }
+
+  .note-title-input {
+    font-size: 1.55rem !important;
+    line-height: 1.25 !important;
+    margin-bottom: 6px !important;
+  }
+
+  .note-rich-body {
+    font-size: 0.98rem !important;
+    line-height: 1.65 !important;
+  }
+
+  .child-notes-grid {
+    grid-template-columns: 1fr !important;
+  }
+
+  .modal-box {
+    width: 95% !important;
+    max-height: 90vh !important;
+  }
+}
+
+
 

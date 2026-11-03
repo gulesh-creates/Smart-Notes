@@ -24,6 +24,7 @@ export interface RichEditorProps {
   onAttachAsset: (file: File) => void;
   onDeleteAsset: (assetId: string) => void;
   onSaveAnnotation: (annotation: MediaAnnotationRecord) => void;
+  isMobile?: boolean;
 }
 
 export const RichEditor: React.FC<RichEditorProps> = ({
@@ -38,8 +39,10 @@ export const RichEditor: React.FC<RichEditorProps> = ({
   onCreateChildNote,
   onAttachAsset,
   onDeleteAsset,
-  onSaveAnnotation
+  onSaveAnnotation,
+  isMobile
 }) => {
+  const isMobileView = isMobile !== undefined ? isMobile : (typeof window !== 'undefined' ? window.innerWidth < 860 : false);
   const bodyRef = useRef<HTMLDivElement | null>(null);
   const [activeAnnotationAssetId, setActiveAnnotationAssetId] = useState<string | null>(null);
   const [activeAnnotationPage, setActiveAnnotationPage] = useState<number>(1);
@@ -142,152 +145,158 @@ export const RichEditor: React.FC<RichEditorProps> = ({
       {/* Hidden File Input */}
       <input ref={fileInputRef} type="file" style={{ display: 'none' }} onChange={onFileInputChange} />
 
-      {/* Editor Header: Breadcrumbs & Sync Telemetry */}
-      <div
-        className="editor-nav-header"
-        style={{
-          padding: '12px 24px',
-          borderBottom: '1px solid var(--border-subtle)',
-          background: 'var(--bg-surface)',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          flexShrink: 0
-        }}
-      >
-        {/* Breadcrumb Trail */}
-        <nav className="breadcrumb-trail" style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
-          {breadcrumbs.map((crumb, idx) => {
-            const isLast = idx === breadcrumbs.length - 1;
-            return (
-              <React.Fragment key={crumb.id || 'root'}>
-                {idx > 0 && <IconChevronRight size={12} color="var(--text-tertiary)" />}
-                <button
-                  type="button"
-                  style={{
-                    background: 'transparent',
-                    border: 'none',
-                    color: isLast ? 'var(--text-main)' : 'var(--text-secondary)',
-                    fontWeight: isLast ? 700 : 500,
-                    cursor: isLast ? 'default' : 'pointer',
-                    padding: '2px 4px',
-                    borderRadius: '4px'
-                  }}
-                  onClick={() => !isLast && onNavigateBreadcrumb(crumb.id)}
-                >
-                  {crumb.title}
-                </button>
-              </React.Fragment>
-            );
-          })}
-        </nav>
+      {/* Editor Header: Breadcrumbs & Sync Telemetry (Desktop only; on mobile AndroidAppView has clean top bar) */}
+      {!isMobileView && (
+        <div
+          className="editor-nav-header"
+          style={{
+            padding: '12px 24px',
+            borderBottom: '1px solid var(--border-subtle)',
+            background: 'var(--bg-surface)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            flexShrink: 0
+          }}
+        >
+          {/* Breadcrumb Trail */}
+          <nav className="breadcrumb-trail" style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
+            {breadcrumbs.map((crumb, idx) => {
+              const isLast = idx === breadcrumbs.length - 1;
+              return (
+                <React.Fragment key={crumb.id || 'root'}>
+                  {idx > 0 && <IconChevronRight size={12} color="var(--text-tertiary)" />}
+                  <button
+                    type="button"
+                    style={{
+                      background: 'transparent',
+                      border: 'none',
+                      color: isLast ? 'var(--text-main)' : 'var(--text-secondary)',
+                      fontWeight: isLast ? 700 : 500,
+                      cursor: isLast ? 'default' : 'pointer',
+                      padding: '2px 4px',
+                      borderRadius: '4px'
+                    }}
+                    onClick={() => !isLast && onNavigateBreadcrumb(crumb.id)}
+                  >
+                    {crumb.title}
+                  </button>
+                </React.Fragment>
+              );
+            })}
+          </nav>
 
-        {/* Local Save & Cloud Sync Separate Status Indicators */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-          <span className="badge" title="Local storage status">
+          {/* Local Save & Cloud Sync Separate Status Indicators */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <span className="badge" title="Local storage status">
+              <span
+                style={{
+                  width: '7px',
+                  height: '7px',
+                  borderRadius: '50%',
+                  background: localSaveState === 'saving' ? 'var(--warning)' : 'var(--lime-primary)'
+                }}
+              />
+              {localSaveState === 'saving' ? 'Saving locally...' : 'Saved on this device'}
+            </span>
+
             <span
+              className={`badge ${cloudSyncState === 'synced' ? 'badge-lime' : ''}`}
+              title="Cloud backup & sync status"
               style={{
-                width: '7px',
-                height: '7px',
-                borderRadius: '50%',
-                background: localSaveState === 'saving' ? 'var(--warning)' : 'var(--lime-primary)'
+                color: cloudSyncState === 'conflict' ? 'var(--danger)' : undefined,
+                borderColor: cloudSyncState === 'conflict' ? 'var(--danger)' : undefined
               }}
-            />
-            {localSaveState === 'saving' ? 'Saving locally...' : 'Saved on this device'}
-          </span>
-
-          <span
-            className={`badge ${cloudSyncState === 'synced' ? 'badge-lime' : ''}`}
-            title="Cloud backup & sync status"
-            style={{
-              color: cloudSyncState === 'conflict' ? 'var(--danger)' : undefined,
-              borderColor: cloudSyncState === 'conflict' ? 'var(--danger)' : undefined
-            }}
-          >
-            {cloudSyncState === 'synced' && 'Cloud Synced'}
-            {cloudSyncState === 'pending' && 'Waiting to Sync'}
-            {cloudSyncState === 'offline' && 'Offline (Queue Active)'}
-            {cloudSyncState === 'conflict' && 'Sync Conflict'}
-          </span>
+            >
+              {cloudSyncState === 'synced' && 'Cloud Synced'}
+              {cloudSyncState === 'pending' && 'Waiting to Sync'}
+              {cloudSyncState === 'offline' && 'Offline (Queue Active)'}
+              {cloudSyncState === 'conflict' && 'Sync Conflict'}
+            </span>
+          </div>
         </div>
-      </div>
+      )}
 
-      {/* Formatting Toolbar */}
+      {/* Formatting Toolbar - Single sleek swipeable row on mobile */}
       <div
         className="editor-formatting-toolbar"
         style={{
-          padding: '6px 20px',
+          padding: isMobileView ? '8px 10px' : '6px 20px',
           borderBottom: '1px solid var(--border-subtle)',
           background: 'var(--bg-surface-elevated)',
           display: 'flex',
           alignItems: 'center',
-          gap: '4px',
-          flexWrap: 'wrap',
+          gap: '5px',
+          flexWrap: isMobileView ? 'nowrap' : 'wrap',
+          overflowX: isMobileView ? 'auto' : 'visible',
+          WebkitOverflowScrolling: 'touch',
+          scrollbarWidth: 'none',
+          msOverflowStyle: 'none',
           flexShrink: 0
         }}
       >
-        <button type="button" className="btn btn-sm" onClick={() => exec('formatBlock', '<h1>')} title="Heading 1">
+        <button type="button" className="btn btn-sm" onClick={() => exec('formatBlock', '<h1>')} title="Heading 1" style={{ minWidth: '32px', height: '32px', padding: '0 8px', flexShrink: 0 }}>
           H1
         </button>
-        <button type="button" className="btn btn-sm" onClick={() => exec('formatBlock', '<h2>')} title="Heading 2">
+        <button type="button" className="btn btn-sm" onClick={() => exec('formatBlock', '<h2>')} title="Heading 2" style={{ minWidth: '32px', height: '32px', padding: '0 8px', flexShrink: 0 }}>
           H2
         </button>
-        <button type="button" className="btn btn-sm" onClick={() => exec('formatBlock', '<h3>')} title="Heading 3">
+        <button type="button" className="btn btn-sm" onClick={() => exec('formatBlock', '<h3>')} title="Heading 3" style={{ minWidth: '32px', height: '32px', padding: '0 8px', flexShrink: 0 }}>
           H3
         </button>
-        <button type="button" className="btn btn-sm" onClick={() => exec('formatBlock', '<p>')} title="Paragraph">
+        <button type="button" className="btn btn-sm" onClick={() => exec('formatBlock', '<p>')} title="Paragraph" style={{ minWidth: '32px', height: '32px', padding: '0 8px', flexShrink: 0 }}>
           P
         </button>
 
-        <span style={{ width: '1px', height: '18px', background: 'var(--border-subtle)', margin: '0 4px' }} />
+        <span style={{ width: '1px', height: '18px', background: 'var(--border-subtle)', margin: '0 2px', flexShrink: 0 }} />
 
-        <button type="button" className="btn btn-icon btn-sm" onClick={() => exec('bold')} title="Bold">
+        <button type="button" className="btn btn-icon btn-sm" onClick={() => exec('bold')} title="Bold" style={{ minWidth: '32px', height: '32px', flexShrink: 0 }}>
           <strong>B</strong>
         </button>
-        <button type="button" className="btn btn-icon btn-sm" onClick={() => exec('italic')} title="Italic">
+        <button type="button" className="btn btn-icon btn-sm" onClick={() => exec('italic')} title="Italic" style={{ minWidth: '32px', height: '32px', flexShrink: 0 }}>
           <em>I</em>
         </button>
-        <button type="button" className="btn btn-icon btn-sm" onClick={() => exec('underline')} title="Underline">
+        <button type="button" className="btn btn-icon btn-sm" onClick={() => exec('underline')} title="Underline" style={{ minWidth: '32px', height: '32px', flexShrink: 0 }}>
           <u>U</u>
         </button>
-        <button type="button" className="btn btn-icon btn-sm" onClick={() => exec('strikeThrough')} title="Strikethrough">
+        <button type="button" className="btn btn-icon btn-sm" onClick={() => exec('strikeThrough')} title="Strikethrough" style={{ minWidth: '32px', height: '32px', flexShrink: 0 }}>
           <s>S</s>
         </button>
 
-        <span style={{ width: '1px', height: '18px', background: 'var(--border-subtle)', margin: '0 4px' }} />
+        <span style={{ width: '1px', height: '18px', background: 'var(--border-subtle)', margin: '0 2px', flexShrink: 0 }} />
 
-        <button type="button" className="btn btn-icon btn-sm" onClick={() => exec('insertUnorderedList')} title="Bullet List">
+        <button type="button" className="btn btn-icon btn-sm" onClick={() => exec('insertUnorderedList')} title="Bullet List" style={{ minWidth: '32px', height: '32px', flexShrink: 0 }}>
           <IconListBullet size={16} />
         </button>
-        <button type="button" className="btn btn-icon btn-sm" onClick={() => exec('insertOrderedList')} title="Numbered List">
+        <button type="button" className="btn btn-icon btn-sm" onClick={() => exec('insertOrderedList')} title="Numbered List" style={{ minWidth: '32px', height: '32px', flexShrink: 0 }}>
           <IconListNumber size={16} />
         </button>
-        <button type="button" className="btn btn-icon btn-sm" onClick={insertChecklist} title="Interactive Checklist">
+        <button type="button" className="btn btn-icon btn-sm" onClick={insertChecklist} title="Interactive Checklist" style={{ minWidth: '32px', height: '32px', flexShrink: 0 }}>
           <IconChecklist size={16} />
         </button>
-        <button type="button" className="btn btn-icon btn-sm" onClick={() => exec('formatBlock', '<blockquote>')} title="Blockquote">
+        <button type="button" className="btn btn-icon btn-sm" onClick={() => exec('formatBlock', '<blockquote>')} title="Blockquote" style={{ minWidth: '32px', height: '32px', flexShrink: 0 }}>
           <IconQuote size={16} />
         </button>
-        <button type="button" className="btn btn-icon btn-sm" onClick={() => exec('formatBlock', '<pre>')} title="Code Block">
+        <button type="button" className="btn btn-icon btn-sm" onClick={() => exec('formatBlock', '<pre>')} title="Code Block" style={{ minWidth: '32px', height: '32px', flexShrink: 0 }}>
           <IconCode size={16} />
         </button>
 
-        <span style={{ width: '1px', height: '18px', background: 'var(--border-subtle)', margin: '0 4px' }} />
+        <span style={{ width: '1px', height: '18px', background: 'var(--border-subtle)', margin: '0 2px', flexShrink: 0 }} />
 
-        <button type="button" className="btn btn-icon btn-sm" onClick={() => exec('undo')} title="Undo">
+        <button type="button" className="btn btn-icon btn-sm" onClick={() => exec('undo')} title="Undo" style={{ minWidth: '32px', height: '32px', flexShrink: 0 }}>
           <IconUndo size={16} />
         </button>
-        <button type="button" className="btn btn-icon btn-sm" onClick={() => exec('redo')} title="Redo">
+        <button type="button" className="btn btn-icon btn-sm" onClick={() => exec('redo')} title="Redo" style={{ minWidth: '32px', height: '32px', flexShrink: 0 }}>
           <IconRedo size={16} />
         </button>
 
-        <span style={{ width: '1px', height: '18px', background: 'var(--border-subtle)', margin: '0 4px' }} />
+        <span style={{ width: '1px', height: '18px', background: 'var(--border-subtle)', margin: '0 2px', flexShrink: 0 }} />
 
-        <button type="button" className="btn btn-sm" onClick={() => triggerFileUpload('image')} title="Insert Image Attachment">
+        <button type="button" className="btn btn-sm" onClick={() => triggerFileUpload('image')} title="Insert Image Attachment" style={{ height: '32px', padding: '0 10px', flexShrink: 0, gap: '4px' }}>
           <IconImage size={15} />
           Image
         </button>
-        <button type="button" className="btn btn-sm" onClick={() => triggerFileUpload('pdf')} title="Insert PDF Document">
+        <button type="button" className="btn btn-sm" onClick={() => triggerFileUpload('pdf')} title="Insert PDF Document" style={{ height: '32px', padding: '0 10px', flexShrink: 0, gap: '4px' }}>
           <IconPdf size={15} />
           PDF
         </button>
@@ -299,8 +308,9 @@ export const RichEditor: React.FC<RichEditorProps> = ({
         style={{
           flex: 1,
           overflowY: 'auto',
-          padding: '36px 14% 60px 14%',
-          background: 'var(--bg-canvas)'
+          WebkitOverflowScrolling: 'touch',
+          padding: isMobileView ? '0' : '36px 14% 60px 14%',
+          background: isMobileView ? 'var(--bg-surface)' : 'var(--bg-canvas)'
         }}
       >
         {/* Document Sheet Card */}
@@ -308,15 +318,32 @@ export const RichEditor: React.FC<RichEditorProps> = ({
           className="document-paper"
           style={{
             background: 'var(--bg-surface)',
-            border: '1px solid var(--border-subtle)',
-            borderRadius: 'var(--radius-card)',
-            padding: '40px 48px',
-            boxShadow: 'var(--shadow-md)',
-            minHeight: '600px',
+            border: isMobileView ? 'none' : '1px solid var(--border-subtle)',
+            borderRadius: isMobileView ? 0 : 'var(--radius-card)',
+            padding: isMobileView ? '16px 16px 90px 16px' : '40px 48px',
+            boxShadow: isMobileView ? 'none' : 'var(--shadow-md)',
+            minHeight: isMobileView ? '100%' : '600px',
             display: 'flex',
-            flexDirection: 'column'
+            flexDirection: 'column',
+            width: '100%',
+            maxWidth: isMobileView ? '100%' : '840px',
+            margin: isMobileView ? '0' : '0 auto'
           }}
         >
+          {/* Subtle Mobile Breadcrumb hint */}
+          {isMobileView && breadcrumbs.length > 1 && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '0.74rem', color: 'var(--text-tertiary)', marginBottom: '8px', overflowX: 'auto', whiteSpace: 'nowrap' }}>
+              {breadcrumbs.map((crumb, idx) => (
+                <React.Fragment key={crumb.id || 'root'}>
+                  {idx > 0 && <span style={{ opacity: 0.5 }}>/</span>}
+                  <span style={{ fontWeight: idx === breadcrumbs.length - 1 ? 600 : 400, color: idx === breadcrumbs.length - 1 ? 'var(--text-secondary)' : 'inherit' }}>
+                    {crumb.title}
+                  </span>
+                </React.Fragment>
+              ))}
+            </div>
+          )}
+
           {/* Note Title Input */}
           <input
             type="text"
@@ -330,20 +357,21 @@ export const RichEditor: React.FC<RichEditorProps> = ({
             data-gramm="false"
             data-enable-grammarly="false"
             style={{
-              fontSize: '2.1rem',
+              fontSize: isMobileView ? '1.55rem' : '2.1rem',
               fontWeight: 800,
               letterSpacing: '-0.02em',
+              lineHeight: 1.25,
               color: 'var(--text-main)',
               border: 'none',
               outline: 'none',
               background: 'transparent',
-              marginBottom: '8px',
+              marginBottom: '6px',
               width: '100%'
             }}
           />
 
           {/* Date & Metadata */}
-          <div style={{ fontSize: '0.76rem', color: 'var(--text-tertiary)', marginBottom: '24px', paddingBottom: '12px', borderBottom: '1px solid var(--border-subtle)' }}>
+          <div style={{ fontSize: '0.74rem', color: 'var(--text-tertiary)', marginBottom: isMobileView ? '16px' : '24px', paddingBottom: '10px', borderBottom: '1px solid var(--border-subtle)' }}>
             Last modified {new Date(note.updatedAt).toLocaleString()} · Version {note.version}
           </div>
 
@@ -403,23 +431,23 @@ export const RichEditor: React.FC<RichEditorProps> = ({
           )}
 
           {/* Child Notes (Sub-pages) Section */}
-          <div className="child-notes-section" style={{ marginTop: '48px', paddingTop: '24px', borderTop: '1px solid var(--border-subtle)' }}>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '14px' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '0.9rem', fontWeight: 700, color: 'var(--text-main)' }}>
-                <IconNote size={16} />
-                Child Notes & Sub-pages
+          <div className="child-notes-section" style={{ marginTop: isMobileView ? '28px' : '48px', paddingTop: '18px', borderTop: '1px solid var(--border-subtle)' }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '12px', gap: '8px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.88rem', fontWeight: 700, color: 'var(--text-main)', minWidth: 0 }}>
+                <IconNote size={15} color="var(--lime-primary)" />
+                <span style={{ whiteSpace: 'nowrap' }}>{isMobileView ? 'Sub-pages' : 'Child Notes & Sub-pages'}</span>
                 <span className="badge badge-lime">{childNotes.length}</span>
               </div>
-              <button type="button" className="btn btn-sm btn-primary" onClick={onCreateChildNote}>
+              <button type="button" className="btn btn-sm btn-primary" onClick={onCreateChildNote} style={{ fontSize: '0.78rem', padding: '5px 12px', height: '30px', flexShrink: 0 }}>
                 <IconPlus size={14} />
                 Add Sub-Note
               </button>
             </div>
 
-            <div className="child-notes-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: '12px' }}>
+            <div className="child-notes-grid" style={{ display: 'grid', gridTemplateColumns: isMobileView ? '1fr' : 'repeat(auto-fill, minmax(220px, 1fr))', gap: '10px' }}>
               {childNotes.length === 0 ? (
-                <div style={{ fontSize: '0.8rem', color: 'var(--text-tertiary)', gridColumn: '1/-1' }}>
-                  No nested child notes. Click "Add Sub-Note" to nest notes inside this note to unlimited depth.
+                <div style={{ fontSize: '0.8rem', color: 'var(--text-tertiary)', gridColumn: '1/-1', background: 'var(--bg-surface-elevated)', padding: '12px 14px', borderRadius: 'var(--radius-sm)', border: '1px dashed var(--border-subtle)' }}>
+                  No nested child notes. Tap "Add Sub-Note" to nest notes inside this note.
                 </div>
               ) : (
                 childNotes.map(child => (
@@ -432,16 +460,22 @@ export const RichEditor: React.FC<RichEditorProps> = ({
                       borderRadius: 'var(--radius-sm)',
                       padding: '12px 14px',
                       cursor: 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
                       transition: 'all var(--transition-fast)'
                     }}
                     onClick={() => onSelectChildNote(child.id)}
                   >
-                    <div style={{ fontSize: '0.88rem', fontWeight: 600, color: 'var(--text-main)', marginBottom: '4px' }}>
-                      {child.title || 'Untitled Note'}
+                    <div style={{ flex: 1, minWidth: 0, paddingRight: '8px' }}>
+                      <div style={{ fontSize: '0.88rem', fontWeight: 600, color: 'var(--text-main)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                        {child.title || 'Untitled Note'}
+                      </div>
+                      <div style={{ fontSize: '0.72rem', color: 'var(--text-tertiary)', marginTop: '2px' }}>
+                        Modified {new Date(child.updatedAt).toLocaleDateString()}
+                      </div>
                     </div>
-                    <div style={{ fontSize: '0.72rem', color: 'var(--text-tertiary)' }}>
-                      Modified {new Date(child.updatedAt).toLocaleDateString()}
-                    </div>
+                    <IconChevronRight size={16} color="var(--text-tertiary)" />
                   </div>
                 ))
               )}

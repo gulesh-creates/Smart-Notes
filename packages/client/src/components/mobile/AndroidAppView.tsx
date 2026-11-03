@@ -116,6 +116,7 @@ export const AndroidAppView: React.FC<AndroidAppViewProps> = ({
             onAttachAsset={onAttachAsset}
             onDeleteAsset={onDeleteAsset}
             onSaveAnnotation={onSaveAnnotation}
+            isMobile={true}
           />
         </div>
       </div>
@@ -321,6 +322,8 @@ export const AndroidAppView: React.FC<AndroidAppViewProps> = ({
                 value={searchQuery}
                 onChange={e => setSearchQuery(e.target.value)}
                 placeholder="Search notes and documents..."
+                spellCheck={false}
+                autoCorrect="off"
                 style={{
                   width: '100%',
                   padding: '10px 14px 10px 36px',

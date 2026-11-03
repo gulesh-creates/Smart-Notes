@@ -978,6 +978,7 @@ export const App: React.FC = () => {
                   onAttachAsset={handleAttachAsset}
                   onDeleteAsset={handleDeleteAsset}
                   onSaveAnnotation={handleSaveAnnotation}
+                  isMobile={isMobile}
                 />
               ) : (
                 <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', flexDirection: 'column', gap: '14px', color: 'var(--text-tertiary)' }}>
