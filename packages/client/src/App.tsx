@@ -38,12 +38,16 @@ import {
   dbRemoveOutboxMutations
 } from './storage/db';
 import {
+  auth,
   firebaseAuthenticate,
   firebaseSignOut,
   syncItemToFirestore,
   deleteItemInFirestore,
-  fetchItemsFromFirestore
+  fetchItemsFromFirestore,
+  subscribeToUserItems,
+  pushMutationsToFirestore
 } from './firebase/firebase';
+import { onAuthStateChanged } from 'firebase/auth';
 
 async function computeSha256(blob: Blob): Promise<string> {
   const buffer = await blob.arrayBuffer();
@@ -103,8 +107,10 @@ export const App: React.FC = () => {
     }, 3500);
   };
 
-  // 1. Initial Load & Seed
+  // 1. Initial Load & Firebase Auth Persistence
   useEffect(() => {
+    let unsubscribeFirestore: (() => void) | null = null;
+
     const initApp = async () => {
       try {
         // Load theme
@@ -112,50 +118,95 @@ export const App: React.FC = () => {
         setTheme(savedTheme);
         applyTheme(savedTheme);
 
-        // Load auth token & profile
-        const token = await dbGetSetting<string | null>('auth_token', null);
-        const savedUserStr = await dbGetSetting<string | null>('auth_user', null);
-        if (token) {
-          setAuthToken(token);
-          if (savedUserStr) {
-            try {
-              setCurrentUser(JSON.parse(savedUserStr));
-            } catch {
-              fetchCurrentUser(token);
-            }
-          } else {
-            fetchCurrentUser(token);
-          }
-        }
-
-        // Load items from IndexedDB
+        // Load items from local IndexedDB first (instant offline availability)
         let storedItems = await dbGetAllItems(true);
         if (!storedItems || storedItems.length === 0) {
-          // First launch seed
           storedItems = INITIAL_SAMPLE_ITEMS;
           await dbSaveItemsBatch(storedItems);
           const sampleAssets = createInitialSampleAssets();
           for (const a of sampleAssets) {
             await dbSaveAsset(a);
           }
-        } else {
-          // Ensure sample assets exist
-          const sampleAssets = createInitialSampleAssets();
-          for (const a of sampleAssets) {
-            const existing = await dbGetAsset(a.id);
-            if (!existing) {
-              await dbSaveAsset(a);
-            }
-          }
         }
-
         setItems(storedItems);
-
-        // Select first active note
         const firstNote = storedItems.find(i => i.kind === 'note' && !i.isDeleted);
         if (firstNote) {
           setSelectedNoteId(firstNote.id);
         }
+
+        // Setup Firebase Auth State Listener for real-time cloud sync across devices
+        onAuthStateChanged(auth, async (fbUser) => {
+          if (fbUser) {
+            const userAccount: UserAccount = {
+              id: fbUser.uid,
+              email: fbUser.email || `${fbUser.displayName || 'user'}@smartnotes.app`,
+              displayName: fbUser.displayName || (fbUser.email ? fbUser.email.split('@')[0] : 'gulesh_creates'),
+              createdAt: Date.now()
+            };
+            setAuthToken(fbUser.uid);
+            setCurrentUser(userAccount);
+            await dbSetSetting('auth_token', fbUser.uid);
+            await dbSetSetting('auth_user', JSON.stringify(userAccount));
+            setCloudSyncState('synced');
+
+            // Attach real-time Firestore synchronization listener
+            if (unsubscribeFirestore) unsubscribeFirestore();
+            unsubscribeFirestore = subscribeToUserItems(
+              fbUser.uid,
+              async (remoteItems) => {
+                if (remoteItems && remoteItems.length > 0) {
+                  await dbSaveItemsBatch(remoteItems);
+                  const all = await dbGetAllItems(true);
+                  setItems(all);
+                  setCloudSyncState('synced');
+                }
+              },
+              (err) => {
+                console.warn('Real-time sync notice:', err);
+              }
+            );
+
+            // Merge local items with Firestore to guarantee no offline work is lost
+            try {
+              const localItems = await dbGetAllItems(true);
+              for (const item of localItems) {
+                await syncItemToFirestore(fbUser.uid, item).catch(() => {});
+              }
+              const remote = await fetchItemsFromFirestore(fbUser.uid);
+              if (remote && remote.length > 0) {
+                await dbSaveItemsBatch(remote);
+                const all = await dbGetAllItems(true);
+                setItems(all);
+              }
+            } catch (mergeErr) {
+              console.warn('Initial cloud merge notice:', mergeErr);
+            }
+
+            // Push any pending outbox mutations
+            const mutations = await dbGetOutboxMutations();
+            if (mutations.length > 0) {
+              const applied = await pushMutationsToFirestore(fbUser.uid, mutations);
+              if (applied.length > 0) {
+                await dbRemoveOutboxMutations(applied);
+              }
+            }
+          } else {
+            // Check if we previously had cached user credentials to try auto-connecting
+            const token = await dbGetSetting<string | null>('auth_token', null);
+            const savedUserStr = await dbGetSetting<string | null>('auth_user', null);
+            if (token && savedUserStr) {
+              try {
+                const parsed = JSON.parse(savedUserStr);
+                setCurrentUser(parsed);
+                setAuthToken(token);
+              } catch {
+                setCloudSyncState('offline');
+              }
+            } else {
+              setCloudSyncState('offline');
+            }
+          }
+        });
       } catch (err) {
         console.error('Failed to initialize app storage:', err);
       }
@@ -168,7 +219,10 @@ export const App: React.FC = () => {
       setIsMobileScreen(window.innerWidth < 860);
     };
     window.addEventListener('resize', handleResize);
-    return () => window.removeEventListener('resize', handleResize);
+    return () => {
+      window.removeEventListener('resize', handleResize);
+      if (unsubscribeFirestore) unsubscribeFirestore();
+    };
   }, []);
 
   // Theme application helper
@@ -187,28 +241,9 @@ export const App: React.FC = () => {
     await dbSetSetting('app_theme', newTheme);
   };
 
-  // Auth Helpers
-  const fetchCurrentUser = async (token: string) => {
-    try {
-      const res = await fetch('/api/auth/me', {
-        headers: { Authorization: `Bearer ${token}` }
-      });
-      if (res.ok) {
-        const data = await res.json();
-        setCurrentUser(data.user);
-      } else {
-        setAuthToken(null);
-        await dbSetSetting('auth_token', null);
-      }
-    } catch {
-      // Offline
-      setCloudSyncState('offline');
-    }
-  };
-
   const handleLogin = async (email: string, pass: string) => {
-    // 1. Authenticate with Firebase Auth
     try {
+      setCloudSyncState('pending');
       const fbUser = await firebaseAuthenticate(email, pass);
       setAuthToken(fbUser.id);
       setCurrentUser(fbUser);
@@ -216,48 +251,31 @@ export const App: React.FC = () => {
       await dbSetSetting('auth_user', JSON.stringify(fbUser));
       showToast(`Welcome back, ${fbUser.displayName}!`);
 
-      // Sync items with Firestore
-      try {
-        const remoteItems = await fetchItemsFromFirestore(fbUser.id);
-        if (remoteItems && remoteItems.length > 0) {
-          await dbSaveItemsBatch(remoteItems);
-          const all = await dbGetAllItems(true);
-          setItems(all);
-        } else {
-          const localItems = await dbGetAllItems(true);
-          for (const item of localItems) {
-            await syncItemToFirestore(fbUser.id, item);
-          }
-        }
-      } catch (syncErr) {
-        console.warn('Firestore initial sync warning:', syncErr);
+      // 1. Push any local notes/folders to Firestore so PC and Phone work together
+      const localItems = await dbGetAllItems(true);
+      for (const item of localItems) {
+        await syncItemToFirestore(fbUser.id, item).catch(() => {});
+      }
+
+      // 2. Fetch all cloud items and merge into local IndexedDB
+      const remoteItems = await fetchItemsFromFirestore(fbUser.id);
+      if (remoteItems && remoteItems.length > 0) {
+        await dbSaveItemsBatch(remoteItems);
+        const all = await dbGetAllItems(true);
+        setItems(all);
       }
 
       setCloudSyncState('synced');
-      return;
     } catch (fbErr: any) {
-      console.warn('Firebase login attempt fallback:', fbErr?.message || fbErr);
+      console.warn('Firebase login attempt failed:', fbErr?.message || fbErr);
+      setCloudSyncState('offline');
+      throw new Error(fbErr?.message || 'Login failed. Please check your credentials.');
     }
-
-    // Fallback to Express backend if Firebase auth was not reachable
-    const res = await fetch('/api/auth/login', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email, password: pass })
-    });
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.error || 'Login failed');
-    setAuthToken(data.token);
-    setCurrentUser(data.user);
-    await dbSetSetting('auth_token', data.token);
-    await dbSetSetting('auth_user', JSON.stringify(data.user));
-    showToast(`Welcome back, ${data.user.displayName}!`);
-    triggerSync();
   };
 
   const handleRegister = async (email: string, pass: string, name: string) => {
-    // 1. Authenticate / Register with Firebase Auth
     try {
+      setCloudSyncState('pending');
       const fbUser = await firebaseAuthenticate(email, pass, name);
       setAuthToken(fbUser.id);
       setCurrentUser(fbUser);
@@ -267,28 +285,14 @@ export const App: React.FC = () => {
 
       const localItems = await dbGetAllItems(true);
       for (const item of localItems) {
-        await syncItemToFirestore(fbUser.id, item);
+        await syncItemToFirestore(fbUser.id, item).catch(() => {});
       }
       setCloudSyncState('synced');
-      return;
     } catch (fbErr: any) {
-      console.warn('Firebase register attempt fallback:', fbErr?.message || fbErr);
+      console.warn('Firebase register attempt failed:', fbErr?.message || fbErr);
+      setCloudSyncState('offline');
+      throw new Error(fbErr?.message || 'Registration failed.');
     }
-
-    // Fallback to Express backend
-    const res = await fetch('/api/auth/register', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email, password: pass, displayName: name })
-    });
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.error || 'Registration failed');
-    setAuthToken(data.token);
-    setCurrentUser(data.user);
-    await dbSetSetting('auth_token', data.token);
-    await dbSetSetting('auth_user', JSON.stringify(data.user));
-    showToast(`Account created for ${data.user.displayName}!`);
-    triggerSync();
   };
 
   const handleLogout = async () => {
@@ -297,12 +301,13 @@ export const App: React.FC = () => {
     await dbSetSetting('auth_token', null);
     await dbSetSetting('auth_user', null);
     await firebaseSignOut();
+    setCloudSyncState('offline');
     showToast('Signed out of cloud sync.');
   };
 
-  // Background Sync Loop
+  // Background Cloud Sync Loop
   const triggerSync = useCallback(async () => {
-    if (!authToken) {
+    if (!currentUser?.id) {
       setCloudSyncState('offline');
       return;
     }
@@ -311,54 +316,31 @@ export const App: React.FC = () => {
       setCloudSyncState('pending');
       const mutations = await dbGetOutboxMutations();
 
-      // Push mutations
+      // 1. Push pending offline mutations to Cloud Firestore
       if (mutations.length > 0) {
-        const pushRes = await fetch('/api/sync/push', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            Authorization: `Bearer ${authToken}`
-          },
-          body: JSON.stringify({ mutations })
-        });
-
-        if (pushRes.ok) {
-          const pushData = await pushRes.json();
-          if (pushData.conflicts && pushData.conflicts.length > 0) {
-            setSyncConflict(pushData.conflicts[0]);
-            setCloudSyncState('conflict');
-            return;
-          }
-          if (pushData.appliedOpIds) {
-            await dbRemoveOutboxMutations(pushData.appliedOpIds);
-          }
+        const appliedOpIds = await pushMutationsToFirestore(currentUser.id, mutations);
+        if (appliedOpIds.length > 0) {
+          await dbRemoveOutboxMutations(appliedOpIds);
         }
       }
 
-      // Pull updates
-      const lastCursor = await dbGetSetting<number>('sync_cursor', 0);
-      const pullRes = await fetch(`/api/sync/pull?cursor=${lastCursor}&limit=100`, {
-        headers: { Authorization: `Bearer ${authToken}` }
-      });
-
-      if (pullRes.ok) {
-        const pullData = await pullRes.json();
-        if (pullData.items && pullData.items.length > 0) {
-          await dbSaveItemsBatch(pullData.items);
-          const all = await dbGetAllItems(true);
-          setItems(all);
-        }
-        await dbSetSetting('sync_cursor', pullData.nextCursor);
+      // 2. Fetch latest items from Firestore to guarantee complete multi-device consistency
+      const remoteItems = await fetchItemsFromFirestore(currentUser.id);
+      if (remoteItems && remoteItems.length > 0) {
+        await dbSaveItemsBatch(remoteItems);
+        const all = await dbGetAllItems(true);
+        setItems(all);
       }
 
       setCloudSyncState('synced');
-    } catch {
+    } catch (err) {
+      console.warn('Firestore background sync loop notice:', err);
       setCloudSyncState('offline');
     }
-  }, [authToken]);
+  }, [currentUser]);
 
   useEffect(() => {
-    const interval = setInterval(triggerSync, 20000);
+    const interval = setInterval(triggerSync, 15000);
     return () => clearInterval(interval);
   }, [triggerSync]);
 
@@ -366,9 +348,14 @@ export const App: React.FC = () => {
   const persistItem = async (item: Item, queueForSync = true) => {
     await dbSaveItem(item, queueForSync);
     if (currentUser?.id) {
-      syncItemToFirestore(currentUser.id, item).catch(err => {
-        console.warn('Firestore sync warning:', err);
-      });
+      syncItemToFirestore(currentUser.id, item)
+        .then(() => {
+          setCloudSyncState('synced');
+        })
+        .catch(err => {
+          console.warn('Firestore sync notice:', err);
+          setCloudSyncState('pending');
+        });
     }
   };
 

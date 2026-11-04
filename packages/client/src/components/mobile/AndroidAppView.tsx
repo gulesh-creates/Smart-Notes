@@ -154,7 +154,23 @@ export const AndroidAppView: React.FC<AndroidAppViewProps> = ({
           </h1>
         </div>
 
-        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+          <span
+            className={`badge ${cloudSyncState === 'synced' ? 'badge-lime' : ''}`}
+            style={{ fontSize: '0.7rem', padding: '3px 8px' }}
+            title={cloudSyncState === 'synced' ? 'Connected to Cloud' : 'Offline / Syncing'}
+          >
+            <span
+              style={{
+                width: '6px',
+                height: '6px',
+                borderRadius: '50%',
+                background: cloudSyncState === 'synced' ? 'var(--lime-primary)' : cloudSyncState === 'pending' ? 'var(--warning)' : 'var(--text-tertiary)',
+                marginRight: '2px'
+              }}
+            />
+            {cloudSyncState === 'synced' ? 'Synced' : cloudSyncState === 'pending' ? 'Syncing...' : 'Local'}
+          </span>
           <button type="button" className="btn btn-icon btn-sm" onClick={onOpenSettings} aria-label="Settings">
             <IconSettings size={18} />
           </button>
@@ -168,7 +184,7 @@ export const AndroidAppView: React.FC<AndroidAppViewProps> = ({
           <div>
             {!currentFolderId && (
               <>
-                {/* Stats Accent Card (Reference Image 3 styling) */}
+                {/* Stats Accent Card */}
                 <div
                   className="stat-accent-card"
                   style={{
@@ -185,13 +201,15 @@ export const AndroidAppView: React.FC<AndroidAppViewProps> = ({
                 >
                   <div>
                     <div style={{ fontSize: '0.72rem', fontWeight: 700, color: 'var(--lime-primary)', textTransform: 'uppercase' }}>
-                      Offline Personal Library
+                      {cloudSyncState === 'synced' ? 'Cloud Synced Library' : cloudSyncState === 'pending' ? 'Syncing with Cloud...' : 'Personal Library'}
                     </div>
                     <div style={{ fontSize: '1.5rem', fontWeight: 800, marginTop: '2px' }}>
                       {activeNotes.length} Notes
                     </div>
                   </div>
-                  <span className="badge badge-lime">100% On-Device</span>
+                  <span className={`badge ${cloudSyncState === 'synced' ? 'badge-lime' : ''}`}>
+                    {cloudSyncState === 'synced' ? 'Cloud Connected' : '100% On-Device'}
+                  </span>
                 </div>
 
                 {/* Pinned Notes Carousel */}

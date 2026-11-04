@@ -18,6 +18,8 @@ import {
   collection,
   getDocs,
   deleteDoc,
+  onSnapshot,
+  query,
   Firestore
 } from 'firebase/firestore';
 import { Item, UserAccount } from '@smartnotes/shared';
@@ -120,17 +122,56 @@ export async function firebaseSignOut(): Promise<void> {
 }
 
 /**
+ * Sanitizes an Item for Firestore so that no undefined values exist
+ * (which cause Firestore to throw an error) and types adhere to security rules.
+ */
+export function sanitizeItemForFirestore(item: Item, userId: string): Record<string, any> {
+  const clean: Record<string, any> = {
+    id: String(item.id),
+    kind: item.kind === 'folder' ? 'folder' : 'note',
+    parentId: item.parentId ? String(item.parentId) : null,
+    title: item.title || (item.kind === 'folder' ? 'Untitled Folder' : 'Untitled Note'),
+    isPinned: Boolean(item.isPinned),
+    isDeleted: Boolean(item.isDeleted),
+    orderIndex: typeof item.orderIndex === 'number' ? item.orderIndex : 0,
+    createdAt: typeof item.createdAt === 'number' && item.createdAt > 0 ? item.createdAt : Date.now(),
+    updatedAt: Date.now(),
+    version: typeof item.version === 'number' && item.version > 0 ? item.version : 1,
+    assetIds: Array.isArray(item.assetIds) ? item.assetIds : [],
+    mediaAnnotations: Array.isArray(item.mediaAnnotations) ? item.mediaAnnotations : [],
+    userId: userId
+  };
+
+  if (item.color && typeof item.color === 'string') {
+    clean.color = item.color;
+  }
+  if (typeof item.contentHtml === 'string') {
+    clean.contentHtml = item.contentHtml;
+  }
+  if (typeof item.plainText === 'string') {
+    clean.plainText = item.plainText;
+  }
+  if (Array.isArray(item.blocks)) {
+    clean.blocks = item.blocks;
+  }
+  if (item.deletedAt !== undefined && item.deletedAt !== null) {
+    clean.deletedAt = item.deletedAt;
+  }
+
+  return clean;
+}
+
+/**
  * Syncs a single Item (note or folder) to Cloud Firestore under users/{userId}/items/{itemId}
  */
 export async function syncItemToFirestore(userId: string, item: Item): Promise<void> {
   try {
     const itemRef = doc(firestore, 'users', userId, 'items', item.id);
-    await setDoc(itemRef, {
-      ...item,
-      updatedAt: Date.now()
-    }, { merge: true });
+    const cleanData = sanitizeItemForFirestore(item, userId);
+    await setDoc(itemRef, cleanData, { merge: true });
   } catch (err) {
     console.warn('Firestore syncItem warning:', err);
+    throw err;
   }
 }
 
@@ -140,9 +181,16 @@ export async function syncItemToFirestore(userId: string, item: Item): Promise<v
 export async function deleteItemInFirestore(userId: string, itemId: string): Promise<void> {
   try {
     const itemRef = doc(firestore, 'users', userId, 'items', itemId);
-    await setDoc(itemRef, { isDeleted: true, updatedAt: Date.now() }, { merge: true });
+    await setDoc(itemRef, {
+      id: itemId,
+      isDeleted: true,
+      deletedAt: Date.now(),
+      updatedAt: Date.now(),
+      userId: userId
+    }, { merge: true });
   } catch (err) {
     console.warn('Firestore deleteItem warning:', err);
+    throw err;
   }
 }
 
@@ -158,4 +206,55 @@ export async function fetchItemsFromFirestore(userId: string): Promise<Item[]> {
     console.warn('Firestore fetchItems warning:', err);
     return [];
   }
+}
+
+/**
+ * Subscribes to real-time updates for a user's items in Firestore.
+ * Every time any device (PC, phone, web) adds/edits/deletes an item,
+ * onUpdate is called with the full updated item collection.
+ */
+export function subscribeToUserItems(
+  userId: string,
+  onUpdate: (items: Item[]) => void,
+  onError?: (err: any) => void
+): () => void {
+  const coll = collection(firestore, 'users', userId, 'items');
+  const q = query(coll);
+  return onSnapshot(
+    q,
+    (snapshot) => {
+      const items: Item[] = [];
+      snapshot.forEach(docSnap => {
+        items.push(docSnap.data() as Item);
+      });
+      onUpdate(items);
+    },
+    (err) => {
+      console.warn('Firestore subscription error:', err);
+      if (onError) onError(err);
+    }
+  );
+}
+
+/**
+ * Pushes offline outbox mutations to Firestore
+ */
+export async function pushMutationsToFirestore(
+  userId: string,
+  mutations: { opId: string; itemId: string; action: 'upsert' | 'delete'; item: Item }[]
+): Promise<string[]> {
+  const appliedOpIds: string[] = [];
+  for (const mut of mutations) {
+    try {
+      if (mut.action === 'delete') {
+        await deleteItemInFirestore(userId, mut.itemId);
+      } else if (mut.item) {
+        await syncItemToFirestore(userId, mut.item);
+      }
+      appliedOpIds.push(mut.opId);
+    } catch (err) {
+      console.warn(`Failed to push mutation ${mut.opId}:`, err);
+    }
+  }
+  return appliedOpIds;
 }
