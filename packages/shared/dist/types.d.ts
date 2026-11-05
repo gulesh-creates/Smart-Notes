@@ -120,3 +120,13 @@ export interface ArchiveManifest {
     items: Item[];
     assets: ArchiveManifestAsset[];
 }
+export interface GitHubCredential {
+    id: string;
+    username: string;
+    token: string;
+    label?: string;
+    expiresAt: number | null;
+    createdAt: number;
+    updatedAt: number;
+    userId?: string;
+}

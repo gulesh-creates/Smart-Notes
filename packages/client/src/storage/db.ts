@@ -1,4 +1,4 @@
-import { Item, Asset, ItemMutation } from '@smartnotes/shared';
+import { Item, Asset, ItemMutation, GitHubCredential } from '@smartnotes/shared';
 
 const DB_NAME = 'SmartNotes_v2';
 const DB_VERSION = 1;
@@ -227,6 +227,32 @@ export async function dbSetSetting<T>(key: string, value: T): Promise<void> {
     tx.oncomplete = () => resolve();
     tx.onerror = () => reject(tx.error);
   });
+}
+
+// GitHub Credentials Management
+export async function dbGetGitHubCredentials(): Promise<GitHubCredential[]> {
+  return dbGetSetting<GitHubCredential[]>('github_credentials', []);
+}
+
+export async function dbSaveGitHubCredential(credential: GitHubCredential): Promise<GitHubCredential[]> {
+  const all = await dbGetGitHubCredentials();
+  const index = all.findIndex(c => c.id === credential.id);
+  let updated: GitHubCredential[];
+  if (index >= 0) {
+    updated = [...all];
+    updated[index] = { ...credential, updatedAt: Date.now() };
+  } else {
+    updated = [credential, ...all];
+  }
+  await dbSetSetting('github_credentials', updated);
+  return updated;
+}
+
+export async function dbDeleteGitHubCredential(id: string): Promise<GitHubCredential[]> {
+  const all = await dbGetGitHubCredentials();
+  const updated = all.filter(c => c.id !== id);
+  await dbSetSetting('github_credentials', updated);
+  return updated;
 }
 
 // Clear all local database data

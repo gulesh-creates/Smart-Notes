@@ -22,7 +22,7 @@ import {
   query,
   Firestore
 } from 'firebase/firestore';
-import { Item, UserAccount } from '@smartnotes/shared';
+import { Item, UserAccount, GitHubCredential } from '@smartnotes/shared';
 
 // Firebase configuration from .env variables with project fallbacks
 export const firebaseConfig = {
@@ -258,3 +258,94 @@ export async function pushMutationsToFirestore(
   }
   return appliedOpIds;
 }
+
+/**
+ * Sanitizes a GitHub Credential for Firestore
+ */
+export function sanitizeGitHubCredentialForFirestore(cred: GitHubCredential, userId: string): Record<string, any> {
+  const clean: Record<string, any> = {
+    id: String(cred.id),
+    username: String(cred.username || '').trim(),
+    token: String(cred.token || '').trim(),
+    createdAt: typeof cred.createdAt === 'number' && cred.createdAt > 0 ? cred.createdAt : Date.now(),
+    updatedAt: Date.now(),
+    userId: userId
+  };
+
+  if (cred.label && typeof cred.label === 'string') {
+    clean.label = cred.label.trim();
+  }
+  if (cred.expiresAt !== undefined) {
+    clean.expiresAt = cred.expiresAt;
+  }
+
+  return clean;
+}
+
+/**
+ * Syncs a GitHub credential to Firestore under users/{userId}/github_credentials/{credId}
+ */
+export async function syncGitHubCredentialToFirestore(userId: string, cred: GitHubCredential): Promise<void> {
+  try {
+    const credRef = doc(firestore, 'users', userId, 'github_credentials', cred.id);
+    const cleanData = sanitizeGitHubCredentialForFirestore(cred, userId);
+    await setDoc(credRef, cleanData, { merge: true });
+  } catch (err) {
+    console.warn('Firestore syncGitHubCredential warning:', err);
+    throw err;
+  }
+}
+
+/**
+ * Deletes a GitHub credential in Firestore
+ */
+export async function deleteGitHubCredentialInFirestore(userId: string, credId: string): Promise<void> {
+  try {
+    const credRef = doc(firestore, 'users', userId, 'github_credentials', credId);
+    await deleteDoc(credRef);
+  } catch (err) {
+    console.warn('Firestore deleteGitHubCredential warning:', err);
+    throw err;
+  }
+}
+
+/**
+ * Fetches all user GitHub credentials from Cloud Firestore
+ */
+export async function fetchGitHubCredentialsFromFirestore(userId: string): Promise<GitHubCredential[]> {
+  try {
+    const coll = collection(firestore, 'users', userId, 'github_credentials');
+    const snap = await getDocs(coll);
+    return snap.docs.map(d => d.data() as GitHubCredential);
+  } catch (err) {
+    console.warn('Firestore fetchGitHubCredentials warning:', err);
+    return [];
+  }
+}
+
+/**
+ * Subscribes to real-time updates for a user's GitHub credentials in Firestore.
+ */
+export function subscribeToGitHubCredentials(
+  userId: string,
+  onUpdate: (creds: GitHubCredential[]) => void,
+  onError?: (err: any) => void
+): () => void {
+  const coll = collection(firestore, 'users', userId, 'github_credentials');
+  const q = query(coll);
+  return onSnapshot(
+    q,
+    (snapshot) => {
+      const creds: GitHubCredential[] = [];
+      snapshot.forEach(docSnap => {
+        creds.push(docSnap.data() as GitHubCredential);
+      });
+      onUpdate(creds);
+    },
+    (err) => {
+      console.warn('Firestore GitHub credentials subscription error:', err);
+      if (onError) onError(err);
+    }
+  );
+}
+

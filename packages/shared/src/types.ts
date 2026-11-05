@@ -142,3 +142,15 @@ export interface ArchiveManifest {
   assets: ArchiveManifestAsset[];
 }
 
+// GitHub Credentials Model
+export interface GitHubCredential {
+  id: string;
+  username: string;
+  token: string;
+  label?: string;
+  expiresAt: number | null; // Epoch timestamp (ms), or null for no expiry
+  createdAt: number;
+  updatedAt: number;
+  userId?: string;
+}
+

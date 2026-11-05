@@ -49,6 +49,18 @@ rules_version = '2';
 //      - storagePath: string (optional, 1..500 chars)
 //      - userId: string (optional, if present must match request.auth.uid)
 //
+// 4. User GitHub Credentials Subcollection: /users/{userId}/github_credentials/{credId}
+//    Document ID: {credId} (string matching cred.id, 1..128 chars)
+//    Fields:
+//      - id: string (required, immutable, 1..128 chars, matches credId)
+//      - username: string (required, 1..100 chars)
+//      - token: string (required, 1..500 chars)
+//      - label: string (optional, 0..100 chars)
+//      - expiresAt: number or null (optional/nullable, epoch milliseconds > 0 if number, or null)
+//      - createdAt: number (required, immutable epoch milliseconds > 0)
+//      - updatedAt: number (required, epoch milliseconds > 0)
+//      - userId: string (optional, if present must match request.auth.uid)
+//
 // ============================================================================
 
 service cloud.firestore {
@@ -191,6 +203,34 @@ service cloud.firestore {
     }
 
     // ------------------------------------------------------------------------
+    // Domain Validators: GitHub Credentials
+    // ------------------------------------------------------------------------
+
+    function isValidGitHubCredential(data, credId) {
+      return data.keys().hasAll([
+          'id', 'username', 'token', 'createdAt', 'updatedAt'
+        ]) &&
+        data.keys().hasOnly([
+          'id', 'username', 'token', 'label', 'expiresAt',
+          'createdAt', 'updatedAt', 'userId'
+        ]) &&
+        data.id is string && data.id == credId && data.id.size() >= 1 && data.id.size() <= 128 &&
+        isValidString(data.username, 1, 100) &&
+        isValidString(data.token, 1, 500) &&
+        isValidOptionalString(data, 'label', 0, 100) &&
+        (!('expiresAt' in data) || data.expiresAt == null || (data.expiresAt is number && data.expiresAt > 0)) &&
+        data.createdAt is number && data.createdAt > 0 &&
+        data.updatedAt is number && data.updatedAt > 0 &&
+        (!('userId' in data) || (data.userId is string && data.userId == request.auth.uid));
+    }
+
+    function areImmutableGitHubCredentialFieldsUnchanged() {
+      return request.resource.data.id == resource.data.id &&
+        request.resource.data.createdAt == resource.data.createdAt &&
+        (!('userId' in resource.data) || request.resource.data.userId == resource.data.userId);
+    }
+
+    // ------------------------------------------------------------------------
     // Security Rules & Access Control
     // ------------------------------------------------------------------------
 
@@ -219,6 +259,14 @@ service cloud.firestore {
         allow read: if isOwner(userId);
         allow create: if isOwner(userId) && isValidAsset(request.resource.data, assetId);
         allow update: if isOwner(userId) && isValidAsset(request.resource.data, assetId) && areImmutableAssetFieldsUnchanged();
+        allow delete: if isOwner(userId);
+      }
+
+      // GitHub Credentials subcollection
+      match /github_credentials/{credId} {
+        allow read: if isOwner(userId);
+        allow create: if isOwner(userId) && isValidGitHubCredential(request.resource.data, credId);
+        allow update: if isOwner(userId) && isValidGitHubCredential(request.resource.data, credId) && areImmutableGitHubCredentialFieldsUnchanged();
         allow delete: if isOwner(userId);
       }
     }

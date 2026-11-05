@@ -3,17 +3,18 @@ import { Item } from '@smartnotes/shared';
 import {
   IconFolder, IconFolderOpen, IconNote, IconSubnote, IconPlus,
   IconChevronRight, IconChevronDown, IconTrash, IconPin, IconSync,
-  IconSettings, IconMove, IconEdit
+  IconSettings, IconMove, IconEdit, IconGitHub
 } from '../icons/Icons';
 
 export interface TreeRailProps {
   items: Item[];
   selectedFolderId: string | null;
   selectedNoteId: string | null;
-  specialFilter: 'all' | 'pinned' | 'recent' | 'trash';
+  specialFilter: 'all' | 'pinned' | 'recent' | 'trash' | 'github';
+  githubCount?: number;
   onSelectFolder: (folderId: string | null) => void;
   onSelectNote: (noteId: string) => void;
-  onSelectSpecialFilter: (filter: 'all' | 'pinned' | 'recent' | 'trash') => void;
+  onSelectSpecialFilter: (filter: 'all' | 'pinned' | 'recent' | 'trash' | 'github') => void;
   onCreateFolder: (parentId: string | null) => void;
   onRenameFolder: (folderId: string) => void;
   onCreateNote: (parentId: string | null) => void;
@@ -26,6 +27,7 @@ export const TreeRail: React.FC<TreeRailProps> = ({
   selectedFolderId,
   selectedNoteId,
   specialFilter,
+  githubCount = 0,
   onSelectFolder,
   onSelectNote,
   onSelectSpecialFilter,
@@ -340,6 +342,35 @@ export const TreeRail: React.FC<TreeRailProps> = ({
           <IconTrash size={16} />
           Trash
           <span className="badge" style={{ marginLeft: 'auto' }}>{trashedItems.length}</span>
+        </button>
+
+        <button
+          type="button"
+          className="btn"
+          style={{
+            justifyContent: 'flex-start',
+            border: 'none',
+            background: specialFilter === 'github' ? 'var(--bg-surface-subtle)' : 'transparent',
+            color: specialFilter === 'github' ? 'var(--text-main)' : 'var(--text-secondary)',
+            fontWeight: specialFilter === 'github' ? 700 : 500,
+            padding: '7px 10px',
+            borderRadius: 'var(--radius-sm)'
+          }}
+          onClick={() => onSelectSpecialFilter('github')}
+        >
+          <IconGitHub size={16} />
+          GitHub Tokens
+          <span
+            className="badge"
+            style={{
+              marginLeft: 'auto',
+              background: specialFilter === 'github' ? 'var(--lime-primary)' : undefined,
+              color: specialFilter === 'github' ? '#000000' : undefined,
+              fontWeight: 700
+            }}
+          >
+            {githubCount}
+          </span>
         </button>
       </div>
 

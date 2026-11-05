@@ -5,6 +5,7 @@ import {
   MediaAnnotationRecord,
   SyncConflict,
   UserAccount,
+  GitHubCredential,
   buildBreadcrumbPath,
   wouldCreateCycle,
   getDescendantIds
@@ -12,11 +13,12 @@ import {
 import {
   IconSettings, IconPlus, IconFolder, IconNote, IconSync,
   IconSun, IconMoon, IconCheck, IconBack, IconClose,
-  IconSearch, IconPin, IconTrash, IconUndo, IconConflict, IconMonitor
+  IconSearch, IconPin, IconTrash, IconUndo, IconConflict, IconMonitor, IconGitHub
 } from './components/icons/Icons';
 import { TreeRail } from './components/navigation/TreeRail';
 import { NoteList } from './components/navigation/NoteList';
 import { RichEditor } from './components/editor/RichEditor';
+import { GitHubTokenManager } from './components/github/GitHubTokenManager';
 import { AndroidAppView } from './components/mobile/AndroidAppView';
 import { MoveItemModal } from './components/modals/MoveItemModal';
 import { ConflictModal } from './components/modals/ConflictModal';
@@ -35,7 +37,10 @@ import {
   dbGetSetting,
   dbSetSetting,
   dbGetOutboxMutations,
-  dbRemoveOutboxMutations
+  dbRemoveOutboxMutations,
+  dbGetGitHubCredentials,
+  dbSaveGitHubCredential,
+  dbDeleteGitHubCredential
 } from './storage/db';
 import {
   auth,
@@ -45,7 +50,11 @@ import {
   deleteItemInFirestore,
   fetchItemsFromFirestore,
   subscribeToUserItems,
-  pushMutationsToFirestore
+  pushMutationsToFirestore,
+  syncGitHubCredentialToFirestore,
+  deleteGitHubCredentialInFirestore,
+  fetchGitHubCredentialsFromFirestore,
+  subscribeToGitHubCredentials
 } from './firebase/firebase';
 import { onAuthStateChanged } from 'firebase/auth';
 
@@ -61,14 +70,15 @@ export const App: React.FC = () => {
   const [items, setItems] = useState<Item[]>([]);
   const [selectedFolderId, setSelectedFolderId] = useState<string | null>(null);
   const [selectedNoteId, setSelectedNoteId] = useState<string | null>(null);
-  const [specialFilter, setSpecialFilter] = useState<'all' | 'pinned' | 'recent' | 'trash'>('all');
+  const [specialFilter, setSpecialFilter] = useState<'all' | 'pinned' | 'recent' | 'trash' | 'github'>('all');
+  const [githubCredentials, setGithubCredentials] = useState<GitHubCredential[]>([]);
   const [searchQuery, setSearchQuery] = useState<string>('');
 
   // States
   const [localSaveState, setLocalSaveState] = useState<'saving' | 'saved' | 'error'>('saved');
   const [cloudSyncState, setCloudSyncState] = useState<'synced' | 'pending' | 'offline' | 'conflict'>('synced');
   const [syncConflict, setSyncConflict] = useState<SyncConflict | null>(null);
-  
+
   // Layout & UI
   const [isMobileScreen, setIsMobileScreen] = useState<boolean>(window.innerWidth < 860);
   const [previewMobileMode, setPreviewMobileMode] = useState<boolean>(false);
@@ -110,6 +120,7 @@ export const App: React.FC = () => {
   // 1. Initial Load & Firebase Auth Persistence
   useEffect(() => {
     let unsubscribeFirestore: (() => void) | null = null;
+    let unsubscribeGitHub: (() => void) | null = null;
 
     const initApp = async () => {
       try {
@@ -132,6 +143,12 @@ export const App: React.FC = () => {
         const firstNote = storedItems.find(i => i.kind === 'note' && !i.isDeleted);
         if (firstNote) {
           setSelectedNoteId(firstNote.id);
+        }
+
+        // Load GitHub credentials from local IndexedDB
+        const storedCreds = await dbGetGitHubCredentials();
+        if (storedCreds) {
+          setGithubCredentials(storedCreds);
         }
 
         // Setup Firebase Auth State Listener for real-time cloud sync across devices
@@ -166,11 +183,36 @@ export const App: React.FC = () => {
               }
             );
 
+            // Attach real-time GitHub credentials listener
+            if (unsubscribeGitHub) unsubscribeGitHub();
+            unsubscribeGitHub = subscribeToGitHubCredentials(
+              fbUser.uid,
+              async (remoteCreds) => {
+                if (remoteCreds) {
+                  const local = await dbGetGitHubCredentials();
+                  const map = new Map<string, GitHubCredential>();
+                  local.forEach(c => map.set(c.id, c));
+                  remoteCreds.forEach(c => {
+                    const existing = map.get(c.id);
+                    if (!existing || c.updatedAt > existing.updatedAt) {
+                      map.set(c.id, c);
+                    }
+                  });
+                  const merged = Array.from(map.values());
+                  await dbSetSetting('github_credentials', merged);
+                  setGithubCredentials(merged);
+                }
+              },
+              (err) => {
+                console.warn('Real-time GitHub credentials notice:', err);
+              }
+            );
+
             // Merge local items with Firestore to guarantee no offline work is lost
             try {
               const localItems = await dbGetAllItems(true);
               for (const item of localItems) {
-                await syncItemToFirestore(fbUser.uid, item).catch(() => {});
+                await syncItemToFirestore(fbUser.uid, item).catch(() => { });
               }
               const remote = await fetchItemsFromFirestore(fbUser.uid);
               if (remote && remote.length > 0) {
@@ -180,6 +222,30 @@ export const App: React.FC = () => {
               }
             } catch (mergeErr) {
               console.warn('Initial cloud merge notice:', mergeErr);
+            }
+
+            // Merge local GitHub credentials with Firestore
+            try {
+              const localCreds = await dbGetGitHubCredentials();
+              for (const cred of localCreds) {
+                await syncGitHubCredentialToFirestore(fbUser.uid, cred).catch(() => { });
+              }
+              const remoteCreds = await fetchGitHubCredentialsFromFirestore(fbUser.uid);
+              if (remoteCreds && remoteCreds.length > 0) {
+                const map = new Map<string, GitHubCredential>();
+                localCreds.forEach(c => map.set(c.id, c));
+                remoteCreds.forEach(c => {
+                  const existing = map.get(c.id);
+                  if (!existing || c.updatedAt > existing.updatedAt) {
+                    map.set(c.id, c);
+                  }
+                });
+                const merged = Array.from(map.values());
+                await dbSetSetting('github_credentials', merged);
+                setGithubCredentials(merged);
+              }
+            } catch (credMergeErr) {
+              console.warn('Initial GitHub cloud merge notice:', credMergeErr);
             }
 
             // Push any pending outbox mutations
@@ -222,6 +288,7 @@ export const App: React.FC = () => {
     return () => {
       window.removeEventListener('resize', handleResize);
       if (unsubscribeFirestore) unsubscribeFirestore();
+      if (unsubscribeGitHub) unsubscribeGitHub();
     };
   }, []);
 
@@ -254,7 +321,7 @@ export const App: React.FC = () => {
       // 1. Push any local notes/folders to Firestore so PC and Phone work together
       const localItems = await dbGetAllItems(true);
       for (const item of localItems) {
-        await syncItemToFirestore(fbUser.id, item).catch(() => {});
+        await syncItemToFirestore(fbUser.id, item).catch(() => { });
       }
 
       // 2. Fetch all cloud items and merge into local IndexedDB
@@ -285,7 +352,7 @@ export const App: React.FC = () => {
 
       const localItems = await dbGetAllItems(true);
       for (const item of localItems) {
-        await syncItemToFirestore(fbUser.id, item).catch(() => {});
+        await syncItemToFirestore(fbUser.id, item).catch(() => { });
       }
       setCloudSyncState('synced');
     } catch (fbErr: any) {
@@ -572,7 +639,7 @@ export const App: React.FC = () => {
     for (const id of allIdsToDelete) {
       await dbMarkItemDeleted(id);
       if (currentUser?.id) {
-        deleteItemInFirestore(currentUser.id, id).catch(() => {});
+        deleteItemInFirestore(currentUser.id, id).catch(() => { });
       }
     }
 
@@ -666,6 +733,53 @@ export const App: React.FC = () => {
     handleUpdateNote({ mediaAnnotations: next });
   };
 
+  // GitHub Credentials Handlers
+  const handleSaveGitHubCredential = async (data: {
+    id?: string;
+    username: string;
+    token: string;
+    label?: string;
+    expiresAt: number | null;
+  }) => {
+    const id = data.id || `gh-${Date.now()}-${Math.random().toString(36).substring(2, 8)}`;
+    const cred: GitHubCredential = {
+      id,
+      username: data.username,
+      token: data.token,
+      label: data.label,
+      expiresAt: data.expiresAt,
+      createdAt: data.id ? (githubCredentials.find(c => c.id === data.id)?.createdAt || Date.now()) : Date.now(),
+      updatedAt: Date.now(),
+      userId: currentUser?.id
+    };
+
+    const updated = await dbSaveGitHubCredential(cred);
+    setGithubCredentials(updated);
+    showToast(data.id ? 'GitHub credential updated' : 'GitHub credential saved');
+
+    if (currentUser?.id) {
+      try {
+        await syncGitHubCredentialToFirestore(currentUser.id, cred);
+      } catch (err) {
+        console.warn('Failed to sync GitHub credential to cloud:', err);
+      }
+    }
+  };
+
+  const handleDeleteGitHubCredential = async (id: string) => {
+    const updated = await dbDeleteGitHubCredential(id);
+    setGithubCredentials(updated);
+    showToast('GitHub credential deleted');
+
+    if (currentUser?.id) {
+      try {
+        await deleteGitHubCredentialInFirestore(currentUser.id, id);
+      } catch (err) {
+        console.warn('Failed to delete GitHub credential from cloud:', err);
+      }
+    }
+  };
+
   // Conflict Resolution
   const handleResolveConflict = async (resolvedItem: Item) => {
     await persistItem(resolvedItem, true);
@@ -714,12 +828,12 @@ export const App: React.FC = () => {
     specialFilter === 'pinned'
       ? 'Pinned Notes'
       : specialFilter === 'recent'
-      ? 'Recent Notes'
-      : specialFilter === 'trash'
-      ? 'Trash'
-      : currentFolder
-      ? currentFolder.title
-      : 'All Notes';
+        ? 'Recent Notes'
+        : specialFilter === 'trash'
+          ? 'Trash'
+          : currentFolder
+            ? currentFolder.title
+            : 'All Notes';
 
   // Toggle mobile/desktop view
   const isMobile = isMobileScreen || previewMobileMode;
@@ -762,6 +876,7 @@ export const App: React.FC = () => {
           childNotes={childNotes}
           localSaveState={localSaveState}
           cloudSyncState={cloudSyncState}
+          githubCredentials={githubCredentials}
           onSelectNote={(id) => setSelectedNoteId(id)}
           onUpdateNote={handleUpdateNote}
           onCreateNote={handleCreateNote}
@@ -771,6 +886,8 @@ export const App: React.FC = () => {
           onDeleteAsset={handleDeleteAsset}
           onSaveAnnotation={handleSaveAnnotation}
           onOpenSettings={() => setIsSettingsModalOpen(true)}
+          onSaveGitHubCredential={handleSaveGitHubCredential}
+          onDeleteGitHubCredential={handleDeleteGitHubCredential}
         />
       ) : (
         /* RENDER MODE B: RESPONSIVE DESKTOP 3-PANE LAYOUT */
@@ -898,11 +1015,15 @@ export const App: React.FC = () => {
                   selectedFolderId={selectedFolderId}
                   selectedNoteId={selectedNoteId}
                   specialFilter={specialFilter}
+                  githubCount={githubCredentials.length}
                   onSelectFolder={(folderId) => {
                     setSelectedFolderId(folderId);
                     setSpecialFilter('all');
                   }}
-                  onSelectNote={(noteId) => setSelectedNoteId(noteId)}
+                  onSelectNote={(noteId) => {
+                    setSelectedNoteId(noteId);
+                    if (specialFilter === 'github') setSpecialFilter('all');
+                  }}
                   onSelectSpecialFilter={(filter) => {
                     setSpecialFilter(filter);
                     setSelectedFolderId(null);
@@ -916,67 +1037,80 @@ export const App: React.FC = () => {
               </aside>
             )}
 
-            {/* PANE 2: SEARCHABLE NOTE LIST (Collapsible) */}
-            {!focusMode && !isNoteListCollapsed && (
-              <section
-                style={{
-                  width: 'var(--notes-list-w)',
-                  flexShrink: 0,
-                  borderRight: '1px solid var(--border-subtle)',
-                  background: 'var(--bg-surface-elevated)',
-                  display: 'flex',
-                  flexDirection: 'column'
-                }}
-              >
-                <NoteList
-                  title={noteListTitle}
-                  folderColor={currentFolder?.color}
-                  notes={getNotesForList()}
-                  selectedNoteId={selectedNoteId}
-                  searchQuery={searchQuery}
-                  onSearchChange={setSearchQuery}
-                  onSelectNote={(noteId) => setSelectedNoteId(noteId)}
-                  onCreateNote={() => handleCreateNote(selectedFolderId)}
+            {/* If GitHub Tokens Filter is active, show the dedicated GitHub Tokens Vault */}
+            {specialFilter === 'github' ? (
+              <main style={{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column', background: 'var(--bg-canvas)' }}>
+                <GitHubTokenManager
+                  credentials={githubCredentials}
+                  onSaveCredential={handleSaveGitHubCredential}
+                  onDeleteCredential={handleDeleteGitHubCredential}
                 />
-              </section>
-            )}
+              </main>
+            ) : (
+              <>
+                {/* PANE 2: SEARCHABLE NOTE LIST (Collapsible) */}
+                {!focusMode && !isNoteListCollapsed && (
+                  <section
+                    style={{
+                      width: 'var(--notes-list-w)',
+                      flexShrink: 0,
+                      borderRight: '1px solid var(--border-subtle)',
+                      background: 'var(--bg-surface-elevated)',
+                      display: 'flex',
+                      flexDirection: 'column'
+                    }}
+                  >
+                    <NoteList
+                      title={noteListTitle}
+                      folderColor={currentFolder?.color}
+                      notes={getNotesForList()}
+                      selectedNoteId={selectedNoteId}
+                      searchQuery={searchQuery}
+                      onSearchChange={setSearchQuery}
+                      onSelectNote={(noteId) => setSelectedNoteId(noteId)}
+                      onCreateNote={() => handleCreateNote(selectedFolderId)}
+                    />
+                  </section>
+                )}
 
-            {/* PANE 3: SELECTED NOTE RICH EDITOR (Main Canvas) */}
-            <main style={{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column', background: 'var(--bg-canvas)' }}>
-              {selectedNote ? (
-                <RichEditor
-                  note={selectedNote}
-                  breadcrumbs={breadcrumbs}
-                  childNotes={childNotes}
-                  localSaveState={localSaveState}
-                  cloudSyncState={cloudSyncState}
-                  onUpdateNote={handleUpdateNote}
-                  onNavigateBreadcrumb={(id) => {
-                    if (id) {
-                      const target = items.find(i => i.id === id);
-                      if (target?.kind === 'note') setSelectedNoteId(id);
-                      else setSelectedFolderId(id);
-                    } else {
-                      setSelectedFolderId(null);
-                    }
-                  }}
-                  onSelectChildNote={(id) => setSelectedNoteId(id)}
-                  onCreateChildNote={handleCreateChildNote}
-                  onAttachAsset={handleAttachAsset}
-                  onDeleteAsset={handleDeleteAsset}
-                  onSaveAnnotation={handleSaveAnnotation}
-                  isMobile={isMobile}
-                />
-              ) : (
-                <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', flexDirection: 'column', gap: '14px', color: 'var(--text-tertiary)' }}>
-                  <IconNote size={48} />
-                  <p style={{ fontWeight: 600 }}>No note selected</p>
-                  <button type="button" className="btn btn-primary btn-sm" onClick={() => handleCreateNote(selectedFolderId)}>
-                    + Create New Note
-                  </button>
-                </div>
-              )}
-            </main>
+                {/* PANE 3: SELECTED NOTE RICH EDITOR (Main Canvas) */}
+                <main style={{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column', background: 'var(--bg-canvas)' }}>
+                  {selectedNote ? (
+                    <RichEditor
+                      note={selectedNote}
+                      breadcrumbs={breadcrumbs}
+                      childNotes={childNotes}
+                      localSaveState={localSaveState}
+                      cloudSyncState={cloudSyncState}
+                      onUpdateNote={handleUpdateNote}
+                      onNavigateBreadcrumb={(id) => {
+                        if (id) {
+                          const target = items.find(i => i.id === id);
+                          if (target?.kind === 'note') setSelectedNoteId(id);
+                          else setSelectedFolderId(id);
+                        } else {
+                          setSelectedFolderId(null);
+                        }
+                      }}
+                      onSelectChildNote={(id) => setSelectedNoteId(id)}
+                      onCreateChildNote={handleCreateChildNote}
+                      onAttachAsset={handleAttachAsset}
+                      onDeleteAsset={handleDeleteAsset}
+                      onSaveAnnotation={handleSaveAnnotation}
+                      isMobile={isMobile}
+                    />
+                  ) : (
+                    <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', flexDirection: 'column', gap: '14px', color: 'var(--text-tertiary)' }}>
+                      <IconNote size={48} />
+                      <p style={{ fontWeight: 600 }}>No note selected</p>
+                      <button type="button" className="btn btn-primary btn-sm" onClick={() => handleCreateNote(selectedFolderId)}>
+                        + Create New Note
+                      </button>
+                    </div>
+                  )}
+                </main>
+              </>
+            )}
           </div>
         </div>
       )}

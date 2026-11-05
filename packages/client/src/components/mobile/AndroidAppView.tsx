@@ -1,11 +1,13 @@
 import React, { useState } from 'react';
-import { Item, Asset, MediaAnnotationRecord } from '@smartnotes/shared';
+import { Item, Asset, MediaAnnotationRecord, GitHubCredential } from '@smartnotes/shared';
 import {
   IconFolder, IconNote, IconSearch, IconPin, IconSettings,
   IconPlus, IconBack, IconSync, IconChevronRight, IconImage, IconPdf,
-  IconPen, IconTrash, IconUndo, IconChecklist, IconListBullet, IconQuote
+  IconPen, IconTrash, IconUndo, IconChecklist, IconListBullet, IconQuote,
+  IconGitHub, IconKey
 } from '../icons/Icons';
 import { RichEditor } from '../editor/RichEditor';
+import { GitHubTokenManager } from '../github/GitHubTokenManager';
 
 export interface AndroidAppViewProps {
   items: Item[];
@@ -14,6 +16,7 @@ export interface AndroidAppViewProps {
   childNotes: Item[];
   localSaveState: 'saving' | 'saved' | 'error';
   cloudSyncState: 'synced' | 'pending' | 'offline' | 'conflict';
+  githubCredentials?: GitHubCredential[];
   onSelectNote: (id: string) => void;
   onUpdateNote: (updated: Partial<Item>) => void;
   onCreateNote: (parentId?: string | null) => void;
@@ -23,6 +26,14 @@ export interface AndroidAppViewProps {
   onDeleteAsset: (assetId: string) => void;
   onSaveAnnotation: (annotation: MediaAnnotationRecord) => void;
   onOpenSettings: () => void;
+  onSaveGitHubCredential?: (cred: {
+    id?: string;
+    username: string;
+    token: string;
+    label?: string;
+    expiresAt: number | null;
+  }) => Promise<void>;
+  onDeleteGitHubCredential?: (id: string) => Promise<void>;
 }
 
 export const AndroidAppView: React.FC<AndroidAppViewProps> = ({
@@ -32,6 +43,7 @@ export const AndroidAppView: React.FC<AndroidAppViewProps> = ({
   childNotes,
   localSaveState,
   cloudSyncState,
+  githubCredentials = [],
   onSelectNote,
   onUpdateNote,
   onCreateNote,
@@ -40,11 +52,14 @@ export const AndroidAppView: React.FC<AndroidAppViewProps> = ({
   onAttachAsset,
   onDeleteAsset,
   onSaveAnnotation,
-  onOpenSettings
+  onOpenSettings,
+  onSaveGitHubCredential,
+  onDeleteGitHubCredential
 }) => {
   const [activeTab, setActiveTab] = useState<'library' | 'search' | 'recent' | 'settings'>('library');
   const [currentFolderId, setCurrentFolderId] = useState<string | null>(null);
   const [isEditorOpen, setIsEditorOpen] = useState<boolean>(false);
+  const [isGitHubOpen, setIsGitHubOpen] = useState<boolean>(false);
   const [searchQuery, setSearchQuery] = useState<string>('');
 
   const activeNotes = items.filter(i => i.kind === 'note' && !i.isDeleted);
@@ -59,6 +74,40 @@ export const AndroidAppView: React.FC<AndroidAppViewProps> = ({
   const handleBackFromEditor = () => {
     setIsEditorOpen(false);
   };
+
+  // Full-screen GitHub Tokens view on Android
+  if (isGitHubOpen) {
+    return (
+      <div className="android-fullscreen-github" style={{ width: '100vw', height: '100vh', display: 'flex', flexDirection: 'column', background: 'var(--bg-canvas)' }}>
+        <div
+          style={{
+            height: '52px',
+            padding: '0 12px',
+            background: 'var(--bg-surface)',
+            borderBottom: '1px solid var(--border-subtle)',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '12px'
+          }}
+        >
+          <button type="button" className="btn btn-icon btn-sm" onClick={() => setIsGitHubOpen(false)} aria-label="Back to Settings">
+            <IconBack size={18} />
+          </button>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <IconGitHub size={18} />
+            <span style={{ fontWeight: 700, fontSize: '0.95rem', color: 'var(--text-main)' }}>GitHub Tokens Vault</span>
+          </div>
+        </div>
+        <div style={{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
+          <GitHubTokenManager
+            credentials={githubCredentials}
+            onSaveCredential={onSaveGitHubCredential || (async () => {})}
+            onDeleteCredential={onDeleteGitHubCredential || (async () => {})}
+          />
+        </div>
+      </div>
+    );
+  }
 
   // Full-screen note editor on Android
   if (isEditorOpen && selectedNote) {
@@ -415,6 +464,40 @@ export const AndroidAppView: React.FC<AndroidAppViewProps> = ({
         {activeTab === 'settings' && (
           <div>
             <h2 style={{ fontSize: '1.1rem', fontWeight: 800, marginBottom: '14px', color: 'var(--text-main)' }}>Settings & Profile</h2>
+            
+            {/* GitHub Accounts & Tokens Card */}
+            <div style={{ background: 'var(--bg-surface)', border: '1px solid var(--border-subtle)', borderRadius: 'var(--radius-md)', padding: '16px', marginBottom: '12px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '6px' }}>
+                <IconGitHub size={18} />
+                <span style={{ fontWeight: 700, fontSize: '0.9rem', color: 'var(--text-main)' }}>GitHub Accounts & Tokens</span>
+                <span
+                  style={{
+                    marginLeft: 'auto',
+                    fontSize: '0.72rem',
+                    fontWeight: 700,
+                    padding: '2px 8px',
+                    borderRadius: '999px',
+                    background: 'rgba(185, 243, 42, 0.15)',
+                    color: 'var(--lime-primary)'
+                  }}
+                >
+                  {githubCredentials.length} Saved
+                </span>
+              </div>
+              <p style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', marginBottom: '12px' }}>
+                Manage personal access tokens, live expiration countdowns, and copy tokens directly on phone.
+              </p>
+              <button
+                type="button"
+                className="btn btn-sm btn-secondary"
+                onClick={() => setIsGitHubOpen(true)}
+                style={{ display: 'flex', alignItems: 'center', gap: '6px', fontWeight: 600 }}
+              >
+                <IconKey size={14} />
+                Open GitHub Tokens Vault
+              </button>
+            </div>
+
             <div style={{ background: 'var(--bg-surface)', border: '1px solid var(--border-subtle)', borderRadius: 'var(--radius-md)', padding: '16px', marginBottom: '12px' }}>
               <div style={{ fontWeight: 700, fontSize: '0.9rem', marginBottom: '6px' }}>Cloud Sync & Account</div>
               <p style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', marginBottom: '12px' }}>
