@@ -149,7 +149,7 @@ export function sanitizeItemForFirestore(item: Item, userId: string): Record<str
     isDeleted: Boolean(item.isDeleted),
     orderIndex: typeof item.orderIndex === 'number' ? item.orderIndex : 0,
     createdAt: typeof item.createdAt === 'number' && item.createdAt > 0 ? item.createdAt : Date.now(),
-    updatedAt: Date.now(),
+    updatedAt: typeof item.updatedAt === 'number' && item.updatedAt > 0 ? item.updatedAt : Date.now(),
     version: typeof item.version === 'number' && item.version > 0 ? item.version : 1,
     assetIds: Array.isArray(item.assetIds) ? item.assetIds : [],
     mediaAnnotations: Array.isArray(item.mediaAnnotations) ? item.mediaAnnotations : [],
@@ -193,17 +193,28 @@ export async function syncItemToFirestore(userId: string, item: Item): Promise<v
 /**
  * Deletes or marks item deleted in Cloud Firestore
  */
-export async function deleteItemInFirestore(userId: string, itemId: string): Promise<void> {
+export async function deleteItemInFirestore(userId: string, itemId: string, existingItem?: Item): Promise<void> {
   if (!firestore) return;
   try {
     const itemRef = doc(firestore, 'users', userId, 'items', itemId);
-    await setDoc(itemRef, {
-      id: itemId,
-      isDeleted: true,
-      deletedAt: Date.now(),
-      updatedAt: Date.now(),
-      userId: userId
-    }, { merge: true });
+    const now = Date.now();
+    if (existingItem) {
+      const clean = sanitizeItemForFirestore({
+        ...existingItem,
+        isDeleted: true,
+        deletedAt: now,
+        updatedAt: now
+      }, userId);
+      await setDoc(itemRef, clean, { merge: true });
+    } else {
+      await setDoc(itemRef, {
+        id: itemId,
+        isDeleted: true,
+        deletedAt: now,
+        updatedAt: now,
+        userId: userId
+      }, { merge: true });
+    }
   } catch (err) {
     console.warn('Firestore deleteItem warning:', err);
     throw err;

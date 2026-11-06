@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Item } from '@smartnotes/shared';
-import { IconSearch, IconPin, IconClose, IconNote, IconSubnote, IconImage, IconPdf, IconFolder } from '../icons/Icons';
+import { IconSearch, IconPin, IconClose, IconNote, IconSubnote, IconImage, IconPdf, IconFolder, IconTrash } from '../icons/Icons';
 
 export interface NoteListProps {
   title: string;
@@ -11,6 +11,7 @@ export interface NoteListProps {
   onSearchChange: (query: string) => void;
   onSelectNote: (noteId: string) => void;
   onCreateNote: () => void;
+  onDeleteNote?: (noteId: string) => void;
 }
 
 export const NoteList: React.FC<NoteListProps> = ({
@@ -21,7 +22,8 @@ export const NoteList: React.FC<NoteListProps> = ({
   searchQuery,
   onSearchChange,
   onSelectNote,
-  onCreateNote
+  onCreateNote,
+  onDeleteNote
 }) => {
   const [filterChip, setFilterChip] = useState<'all' | 'pinned' | 'subnotes' | 'media'>('all');
 
@@ -188,14 +190,42 @@ export const NoteList: React.FC<NoteListProps> = ({
                 onClick={() => onSelectNote(n.id)}
               >
                 <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '8px' }}>
-                  <div style={{ fontSize: '0.92rem', fontWeight: 700, color: 'var(--text-main)', lineHeight: 1.3 }}>
+                  <div style={{ fontSize: '0.92rem', fontWeight: 700, color: 'var(--text-main)', lineHeight: 1.3, flex: 1 }}>
                     {highlightMatches(n.title || 'Untitled Note', searchQuery)}
                   </div>
-                  {n.isPinned && (
-                    <span style={{ color: 'var(--lime-primary)' }} title="Pinned">
-                      <IconPin size={14} />
-                    </span>
-                  )}
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                    {n.isPinned && (
+                      <span style={{ color: 'var(--lime-primary)' }} title="Pinned">
+                        <IconPin size={14} />
+                      </span>
+                    )}
+                    {onDeleteNote && (
+                      <button
+                        type="button"
+                        className="btn btn-icon btn-sm"
+                        style={{
+                          width: '26px',
+                          height: '26px',
+                          padding: 0,
+                          border: 'none',
+                          background: 'transparent',
+                          color: 'var(--text-tertiary)',
+                          borderRadius: '4px',
+                          cursor: 'pointer'
+                        }}
+                        onMouseEnter={e => (e.currentTarget.style.color = 'var(--danger, #ef4444)')}
+                        onMouseLeave={e => (e.currentTarget.style.color = 'var(--text-tertiary)')}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onDeleteNote(n.id);
+                        }}
+                        title="Delete Note"
+                        aria-label="Delete Note"
+                      >
+                        <IconTrash size={14} />
+                      </button>
+                    )}
+                  </div>
                 </div>
 
                 <div

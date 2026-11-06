@@ -95,9 +95,23 @@ export async function dbSaveItemsBatch(items: Item[]): Promise<void> {
   return new Promise((resolve, reject) => {
     const tx = db.transaction('items', 'readwrite');
     const store = tx.objectStore('items');
-    for (const item of items) {
-      store.put(item);
-    }
+    const getAllReq = store.getAll();
+    getAllReq.onsuccess = () => {
+      const existingItems = (getAllReq.result as Item[]) || [];
+      const localMap = new Map<string, Item>();
+      for (const ex of existingItems) {
+        localMap.set(ex.id, ex);
+      }
+      for (const incoming of items) {
+        if (!incoming || !incoming.id) continue;
+        const local = localMap.get(incoming.id);
+        // Only update if no local exists OR incoming is strictly newer
+        // This ensures local unsynced edits or newer changes are NEVER overwritten by stale cloud snapshots!
+        if (!local || (incoming.updatedAt || 0) > (local.updatedAt || 0)) {
+          store.put(incoming);
+        }
+      }
+    };
     tx.oncomplete = () => resolve();
     tx.onerror = () => reject(tx.error);
   });

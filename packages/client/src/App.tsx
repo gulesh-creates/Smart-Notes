@@ -542,14 +542,13 @@ export const App: React.FC = () => {
   const persistItem = async (item: Item, queueForSync = true) => {
     await dbSaveItem(item, queueForSync);
     if (currentUser?.id) {
-      syncItemToFirestore(currentUser.id, item)
-        .then(() => {
-          setCloudSyncState('synced');
-        })
-        .catch(err => {
-          console.warn('Firestore sync notice:', err);
-          setCloudSyncState('pending');
-        });
+      try {
+        await syncItemToFirestore(currentUser.id, item);
+        setCloudSyncState('synced');
+      } catch (err) {
+        console.warn('Firestore sync notice:', err);
+        setCloudSyncState('pending');
+      }
     }
   };
 
@@ -562,36 +561,50 @@ export const App: React.FC = () => {
     setLocalSaveState('saving');
     const now = Date.now();
 
+    let mergedItem: Item | undefined;
+
     setItems(prev => {
       const next = prev.map(item => {
         if (item.id === selectedNoteId) {
-          return {
+          const m = {
             ...item,
             ...updated,
-            version: item.version + 1,
+            version: (item.version || 1) + 1,
             updatedAt: now
           };
+          mergedItem = m;
+          return m;
         }
         return item;
       });
-
-      const updatedItem = next.find(i => i.id === selectedNoteId);
-      if (updatedItem) {
-        if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
-        saveTimerRef.current = setTimeout(async () => {
-          try {
-            await persistItem(updatedItem, true);
-            setLocalSaveState('saved');
-            if (authToken) triggerSync();
-          } catch (e) {
-            console.error('Failed to autosave note:', e);
-            setLocalSaveState('error');
-          }
-        }, 400);
-      }
-
       return next;
     });
+
+    if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+    saveTimerRef.current = setTimeout(async () => {
+      try {
+        let toSave = mergedItem;
+        if (!toSave) {
+          const all = await dbGetAllItems(true);
+          const found = all.find(i => i.id === selectedNoteId);
+          if (found) {
+            toSave = {
+              ...found,
+              ...updated,
+              version: (found.version || 1) + 1,
+              updatedAt: Date.now()
+            };
+          }
+        }
+        if (toSave) {
+          await persistItem(toSave, true);
+          setLocalSaveState('saved');
+        }
+      } catch (e) {
+        console.error('Failed to autosave note:', e);
+        setLocalSaveState('error');
+      }
+    }, 350);
   };
 
   // Item Creation Handlers
@@ -764,9 +777,10 @@ export const App: React.FC = () => {
     const allIdsToDelete = [itemId, ...descIds];
 
     for (const id of allIdsToDelete) {
+      const item = items.find(i => i.id === id);
       await dbMarkItemDeleted(id);
       if (currentUser?.id) {
-        deleteItemInFirestore(currentUser.id, id).catch(() => { });
+        await deleteItemInFirestore(currentUser.id, id, item).catch(() => { });
       }
     }
 
@@ -1019,6 +1033,7 @@ export const App: React.FC = () => {
           onOpenSettings={() => setIsSettingsModalOpen(true)}
           onSaveGitHubCredential={handleSaveGitHubCredential}
           onDeleteGitHubCredential={handleDeleteGitHubCredential}
+          onDeleteItem={handleRequestDelete}
           onSyncConsistencyVault={(updatedVault) => {
             const strk = calculateStreak(updatedVault);
             setConsistencyStreak(strk.currentStreak);
@@ -1224,6 +1239,7 @@ export const App: React.FC = () => {
                       onSearchChange={setSearchQuery}
                       onSelectNote={(noteId) => setSelectedNoteId(noteId)}
                       onCreateNote={() => handleCreateNote(selectedFolderId)}
+                      onDeleteNote={handleRequestDelete}
                     />
                   </section>
                 )}
@@ -1252,6 +1268,7 @@ export const App: React.FC = () => {
                       onAttachAsset={handleAttachAsset}
                       onDeleteAsset={handleDeleteAsset}
                       onSaveAnnotation={handleSaveAnnotation}
+                      onDeleteNote={handleRequestDelete}
                       isMobile={isMobile}
                     />
                   ) : (

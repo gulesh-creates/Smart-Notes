@@ -24,6 +24,7 @@ export interface RichEditorProps {
   onAttachAsset: (file: File) => void;
   onDeleteAsset: (assetId: string) => void;
   onSaveAnnotation: (annotation: MediaAnnotationRecord) => void;
+  onDeleteNote?: (id: string) => void;
   isMobile?: boolean;
 }
 
@@ -40,6 +41,7 @@ export const RichEditor: React.FC<RichEditorProps> = ({
   onAttachAsset,
   onDeleteAsset,
   onSaveAnnotation,
+  onDeleteNote,
   isMobile
 }) => {
   const isMobileView = isMobile !== undefined ? isMobile : (typeof window !== 'undefined' ? window.innerWidth < 860 : false);
@@ -213,6 +215,29 @@ export const RichEditor: React.FC<RichEditorProps> = ({
               {cloudSyncState === 'offline' && 'Offline (Queue Active)'}
               {cloudSyncState === 'conflict' && 'Sync Conflict'}
             </span>
+
+            {onDeleteNote && (
+              <button
+                type="button"
+                className="btn btn-icon btn-sm"
+                style={{
+                  color: 'var(--danger, #ef4444)',
+                  borderColor: 'rgba(239, 68, 68, 0.25)',
+                  marginLeft: '4px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '4px',
+                  padding: '4px 8px',
+                  borderRadius: 'var(--radius-pill, 20px)'
+                }}
+                onClick={() => onDeleteNote(note.id)}
+                title="Delete Note"
+                aria-label="Delete Note"
+              >
+                <IconTrash size={14} />
+                <span style={{ fontSize: '0.74rem', fontWeight: 600 }}>Delete</span>
+              </button>
+            )}
           </div>
         </div>
       )}

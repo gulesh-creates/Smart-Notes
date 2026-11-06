@@ -36,6 +36,7 @@ export interface AndroidAppViewProps {
   }) => Promise<void>;
   onDeleteGitHubCredential?: (id: string) => Promise<void>;
   onSyncConsistencyVault?: (vault: ConsistencyVault) => void;
+  onDeleteItem?: (id: string) => void;
 }
 
 export const AndroidAppView: React.FC<AndroidAppViewProps> = ({
@@ -57,7 +58,8 @@ export const AndroidAppView: React.FC<AndroidAppViewProps> = ({
   onOpenSettings,
   onSaveGitHubCredential,
   onDeleteGitHubCredential,
-  onSyncConsistencyVault
+  onSyncConsistencyVault,
+  onDeleteItem
 }) => {
   const [activeTab, setActiveTab] = useState<'library' | 'search' | 'recent' | 'settings'>('library');
   const [currentFolderId, setCurrentFolderId] = useState<string | null>(null);
@@ -167,9 +169,32 @@ export const AndroidAppView: React.FC<AndroidAppViewProps> = ({
             {localSaveState === 'saving' ? 'Saving...' : 'Saved Locally'}
           </span>
 
-          <button type="button" className="btn btn-sm btn-primary" onClick={handleBackFromEditor}>
-            Done
-          </button>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            {onDeleteItem && (
+              <button
+                type="button"
+                className="btn btn-icon btn-sm"
+                style={{
+                  color: 'var(--danger, #ef4444)',
+                  borderColor: 'rgba(239, 68, 68, 0.25)',
+                  width: '32px',
+                  height: '32px',
+                  padding: 0
+                }}
+                onClick={() => {
+                  onDeleteItem(selectedNote.id);
+                  handleBackFromEditor();
+                }}
+                title="Delete Note"
+                aria-label="Delete Note"
+              >
+                <IconTrash size={16} />
+              </button>
+            )}
+            <button type="button" className="btn btn-sm btn-primary" onClick={handleBackFromEditor}>
+              Done
+            </button>
+          </div>
         </div>
 
         {/* Editor Body */}
@@ -199,6 +224,10 @@ export const AndroidAppView: React.FC<AndroidAppViewProps> = ({
             onAttachAsset={onAttachAsset}
             onDeleteAsset={onDeleteAsset}
             onSaveAnnotation={onSaveAnnotation}
+            onDeleteNote={onDeleteItem ? (id) => {
+              onDeleteItem(id);
+              handleBackFromEditor();
+            } : undefined}
             isMobile={true}
           />
         </div>
@@ -406,7 +435,31 @@ export const AndroidAppView: React.FC<AndroidAppViewProps> = ({
                     }}
                     onClick={() => openNoteInEditor(note.id)}
                   >
-                    <div style={{ fontWeight: 700, fontSize: '0.9rem', color: 'var(--text-main)' }}>{note.title || 'Untitled'}</div>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px' }}>
+                      <div style={{ fontWeight: 700, fontSize: '0.9rem', color: 'var(--text-main)', flex: 1 }}>{note.title || 'Untitled'}</div>
+                      {onDeleteItem && (
+                        <button
+                          type="button"
+                          className="btn btn-icon btn-sm"
+                          style={{
+                            width: '26px',
+                            height: '26px',
+                            padding: 0,
+                            border: 'none',
+                            background: 'transparent',
+                            color: 'var(--text-tertiary)'
+                          }}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            onDeleteItem(note.id);
+                          }}
+                          title="Delete Note"
+                          aria-label="Delete Note"
+                        >
+                          <IconTrash size={14} />
+                        </button>
+                      )}
+                    </div>
                     <div style={{ fontSize: '0.76rem', color: 'var(--text-secondary)', marginTop: '2px', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
                       {note.plainText?.slice(0, 80) || 'Empty note...'}
                     </div>
@@ -494,7 +547,31 @@ export const AndroidAppView: React.FC<AndroidAppViewProps> = ({
                   }}
                   onClick={() => openNoteInEditor(n.id)}
                 >
-                  <div style={{ fontWeight: 700, fontSize: '0.9rem', color: 'var(--text-main)' }}>{n.title || 'Untitled'}</div>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px' }}>
+                    <div style={{ fontWeight: 700, fontSize: '0.9rem', color: 'var(--text-main)', flex: 1 }}>{n.title || 'Untitled'}</div>
+                    {onDeleteItem && (
+                      <button
+                        type="button"
+                        className="btn btn-icon btn-sm"
+                        style={{
+                          width: '26px',
+                          height: '26px',
+                          padding: 0,
+                          border: 'none',
+                          background: 'transparent',
+                          color: 'var(--text-tertiary)'
+                        }}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onDeleteItem(n.id);
+                        }}
+                        title="Delete Note"
+                        aria-label="Delete Note"
+                      >
+                        <IconTrash size={14} />
+                      </button>
+                    )}
+                  </div>
                   <div style={{ fontSize: '0.7rem', color: 'var(--text-tertiary)', marginTop: '4px' }}>
                     Modified {new Date(n.updatedAt).toLocaleString()}
                   </div>
