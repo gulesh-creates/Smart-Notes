@@ -6,6 +6,7 @@ import {
   SyncConflict,
   UserAccount,
   GitHubCredential,
+  ConsistencyVault,
   buildBreadcrumbPath,
   wouldCreateCycle,
   getDescendantIds
@@ -19,6 +20,8 @@ import { TreeRail } from './components/navigation/TreeRail';
 import { NoteList } from './components/navigation/NoteList';
 import { RichEditor } from './components/editor/RichEditor';
 import { GitHubTokenManager } from './components/github/GitHubTokenManager';
+import { ConsistencyWorkspace } from './components/consistency/ConsistencyWorkspace';
+import { FocusTimerFloatingBar } from './components/consistency/FocusTimerFloatingBar';
 import { AndroidAppView } from './components/mobile/AndroidAppView';
 import { MoveItemModal } from './components/modals/MoveItemModal';
 import { ConflictModal } from './components/modals/ConflictModal';
@@ -43,6 +46,11 @@ import {
   dbDeleteGitHubCredential
 } from './storage/db';
 import {
+  dbGetConsistencyVault,
+  dbSaveConsistencyVault,
+  calculateStreak
+} from './storage/consistencyDb';
+import {
   auth,
   firebaseAuthenticate,
   firebaseSignOut,
@@ -57,13 +65,18 @@ import {
   subscribeToGitHubCredentials,
   SYS_GITHUB_CREDS_ID,
   parseGitHubSyncItem,
-  syncGitHubVaultToFirestore
+  syncGitHubVaultToFirestore,
+  SYS_CONSISTENCY_VAULT_ID,
+  parseConsistencySyncItem,
+  syncConsistencyVaultToFirestore
 } from './firebase/firebase';
 import { onAuthStateChanged } from 'firebase/auth';
 
 const isSystemItem = (item: Item): boolean =>
   item.id === SYS_GITHUB_CREDS_ID ||
   item.title === '__sys_github_credentials__' ||
+  item.id === SYS_CONSISTENCY_VAULT_ID ||
+  item.title === '__sys_consistency_data__' ||
   item.id.startsWith('sys-');
 
 async function computeSha256(blob: Blob): Promise<string> {
@@ -78,8 +91,9 @@ export const App: React.FC = () => {
   const [items, setItems] = useState<Item[]>([]);
   const [selectedFolderId, setSelectedFolderId] = useState<string | null>(null);
   const [selectedNoteId, setSelectedNoteId] = useState<string | null>(null);
-  const [specialFilter, setSpecialFilter] = useState<'all' | 'pinned' | 'recent' | 'trash' | 'github'>('all');
+  const [specialFilter, setSpecialFilter] = useState<'all' | 'pinned' | 'recent' | 'trash' | 'github' | 'consistency'>('all');
   const [githubCredentials, setGithubCredentials] = useState<GitHubCredential[]>([]);
+  const [consistencyStreak, setConsistencyStreak] = useState<number>(0);
   const [searchQuery, setSearchQuery] = useState<string>('');
 
   // States
@@ -159,6 +173,15 @@ export const App: React.FC = () => {
           setGithubCredentials(storedCreds);
         }
 
+        // Load Consistency vault and streak from local IndexedDB
+        try {
+          const storedVault = await dbGetConsistencyVault();
+          const strk = calculateStreak(storedVault);
+          setConsistencyStreak(strk.currentStreak);
+        } catch (cErr) {
+          console.warn('Initial consistency load notice:', cErr);
+        }
+
         // Setup Firebase Auth State Listener for real-time cloud sync across devices
         onAuthStateChanged(auth, async (fbUser) => {
           if (fbUser) {
@@ -200,7 +223,21 @@ export const App: React.FC = () => {
                     }
                   }
 
-                  // 2. Regular note items (filtered from system items)
+                  // 2. Check if there is a sys-consistency-data sync item in remote items
+                  const consistencySyncDoc = remoteItems.find(i => i.id === SYS_CONSISTENCY_VAULT_ID || i.title === '__sys_consistency_data__');
+                  if (consistencySyncDoc) {
+                    const parsedVault = parseConsistencySyncItem(consistencySyncDoc);
+                    if (parsedVault) {
+                      const localVault = await dbGetConsistencyVault();
+                      if (!localVault || parsedVault.updatedAt > localVault.updatedAt) {
+                        await dbSaveConsistencyVault(parsedVault);
+                        const strk = calculateStreak(parsedVault);
+                        setConsistencyStreak(strk.currentStreak);
+                      }
+                    }
+                  }
+
+                  // 3. Regular note items (filtered from system items)
                   const regularItems = remoteItems.filter(i => !isSystemItem(i));
                   await dbSaveItemsBatch(regularItems);
                   const all = (await dbGetAllItems(true)).filter(i => !isSystemItem(i));
@@ -265,6 +302,20 @@ export const App: React.FC = () => {
                     setGithubCredentials(merged);
                   }
                 }
+
+                // Check if remote items include sys-consistency-data
+                const consistencyDoc = remote.find(i => i.id === SYS_CONSISTENCY_VAULT_ID || i.title === '__sys_consistency_data__');
+                if (consistencyDoc) {
+                  const parsedVault = parseConsistencySyncItem(consistencyDoc);
+                  if (parsedVault) {
+                    const localVault = await dbGetConsistencyVault();
+                    if (!localVault || parsedVault.updatedAt > localVault.updatedAt) {
+                      await dbSaveConsistencyVault(parsedVault);
+                      const strk = calculateStreak(parsedVault);
+                      setConsistencyStreak(strk.currentStreak);
+                    }
+                  }
+                }
                 const regular = remote.filter(i => !isSystemItem(i));
                 await dbSaveItemsBatch(regular);
                 const all = (await dbGetAllItems(true)).filter(i => !isSystemItem(i));
@@ -299,6 +350,16 @@ export const App: React.FC = () => {
               }
             } catch (credMergeErr) {
               console.warn('Initial GitHub cloud merge notice:', credMergeErr);
+            }
+
+            // Guaranteed push of local Consistency vault to Firestore so Vercel & Mobile get it immediately
+            try {
+              const localVault = await dbGetConsistencyVault();
+              if (localVault) {
+                await syncConsistencyVaultToFirestore(fbUser.uid, localVault);
+              }
+            } catch (cPushErr) {
+              console.warn('Initial Consistency cloud push notice:', cPushErr);
             }
 
             // Push any pending outbox mutations
@@ -943,6 +1004,15 @@ export const App: React.FC = () => {
           onOpenSettings={() => setIsSettingsModalOpen(true)}
           onSaveGitHubCredential={handleSaveGitHubCredential}
           onDeleteGitHubCredential={handleDeleteGitHubCredential}
+          onSyncConsistencyVault={(updatedVault) => {
+            const strk = calculateStreak(updatedVault);
+            setConsistencyStreak(strk.currentStreak);
+            if (currentUser?.id) {
+              syncConsistencyVaultToFirestore(currentUser.id, updatedVault).catch(err => {
+                console.warn('Failed to sync Consistency vault:', err);
+              });
+            }
+          }}
         />
       ) : (
         /* RENDER MODE B: RESPONSIVE DESKTOP 3-PANE LAYOUT */
@@ -1071,13 +1141,14 @@ export const App: React.FC = () => {
                   selectedNoteId={selectedNoteId}
                   specialFilter={specialFilter}
                   githubCount={githubCredentials.length}
+                  consistencyStreak={consistencyStreak}
                   onSelectFolder={(folderId) => {
                     setSelectedFolderId(folderId);
                     setSpecialFilter('all');
                   }}
                   onSelectNote={(noteId) => {
                     setSelectedNoteId(noteId);
-                    if (specialFilter === 'github') setSpecialFilter('all');
+                    if (specialFilter === 'github' || specialFilter === 'consistency') setSpecialFilter('all');
                   }}
                   onSelectSpecialFilter={(filter) => {
                     setSpecialFilter(filter);
@@ -1092,8 +1163,22 @@ export const App: React.FC = () => {
               </aside>
             )}
 
-            {/* If GitHub Tokens Filter is active, show the dedicated GitHub Tokens Vault */}
-            {specialFilter === 'github' ? (
+            {/* If Consistency Tracker Filter is active */}
+            {specialFilter === 'consistency' ? (
+              <main style={{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column', background: 'var(--bg-canvas)' }}>
+                <ConsistencyWorkspace
+                  onSyncVault={(updatedVault) => {
+                    const strk = calculateStreak(updatedVault);
+                    setConsistencyStreak(strk.currentStreak);
+                    if (currentUser?.id) {
+                      syncConsistencyVaultToFirestore(currentUser.id, updatedVault).catch(err => {
+                        console.warn('Failed to sync Consistency vault:', err);
+                      });
+                    }
+                  }}
+                />
+              </main>
+            ) : specialFilter === 'github' ? (
               <main style={{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column', background: 'var(--bg-canvas)' }}>
                 <GitHubTokenManager
                   credentials={githubCredentials}
@@ -1257,6 +1342,14 @@ export const App: React.FC = () => {
           setItemToDelete(null);
         }}
         onConfirmDelete={handleConfirmDelete}
+      />
+
+      {/* Floating Active Focus Timer Bar across all views */}
+      <FocusTimerFloatingBar
+        onOpenFocusView={() => {
+          setSpecialFilter('consistency');
+          setSelectedFolderId(null);
+        }}
       />
     </div>
   );

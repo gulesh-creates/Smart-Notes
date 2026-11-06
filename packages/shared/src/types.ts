@@ -154,3 +154,95 @@ export interface GitHubCredential {
   userId?: string;
 }
 
+// Consistency Tracker Models
+export interface ConsistencyCategory {
+  id: string;
+  name: string;
+  description?: string;
+  orderIndex: number;
+  color?: string;
+  isPaused?: boolean;
+  isArchived?: boolean;
+  createdAt: number;
+  updatedAt: number;
+}
+
+export type ConsistencyRecurrenceType = 'daily' | 'weekdays' | 'weekends' | 'custom';
+
+export interface ConsistencyRecurrence {
+  type: ConsistencyRecurrenceType;
+  daysOfWeek?: number[]; // 0 = Sunday, 1 = Monday, ..., 6 = Saturday
+}
+
+export interface ConsistencyActivity {
+  id: string;
+  categoryId: string;
+  title: string;
+  description?: string;
+  minMinutes: number;
+  idealMinutes?: number;
+  recurrence: ConsistencyRecurrence;
+  startDate?: string; // YYYY-MM-DD
+  endDate?: string;   // YYYY-MM-DD
+  orderIndex: number;
+  isPaused?: boolean;
+  isArchived?: boolean;
+  createdAt: number;
+  updatedAt: number;
+}
+
+export interface ConsistencyDailyRecord {
+  id: string; // `${activityId}_${dateKey}`
+  activityId: string;
+  dateKey: string; // Local YYYY-MM-DD
+  isCompleted: boolean;
+  completedAt?: number;
+  actualMinutes: number;
+  notes?: string;
+  updatedAt: number;
+}
+
+export interface ConsistencyFocusSession {
+  id: string;
+  activityId: string;
+  dateKey: string; // Local YYYY-MM-DD
+  startTimestamp: number;
+  endTimestamp: number;
+  focusedSeconds: number;
+  breakSeconds: number;
+  stagesCompleted: number;
+  source: 'timer' | 'manual';
+  notes?: string;
+  createdAt: number;
+}
+
+export interface ConsistencyDailyOverride {
+  id: string; // `${activityId}_${dateKey}` or `min_day_${dateKey}`
+  activityId?: string; // optional if overriding all activities or specific activity
+  dateKey: string; // Local YYYY-MM-DD
+  overrideMinMinutes?: number;
+  isMinimumDay?: boolean; // When true, sets a global minimum day scaling
+  reason?: string;
+  createdAt: number;
+}
+
+export interface ConsistencyReflection {
+  id: string; // `reflection_${weekKey}` e.g. 2026-W45
+  weekKey: string;
+  wentWell: string;
+  interrupted: string;
+  improveNext: string;
+  updatedAt: number;
+}
+
+export interface ConsistencyVault {
+  categories: ConsistencyCategory[];
+  activities: ConsistencyActivity[];
+  dailyRecords: ConsistencyDailyRecord[];
+  focusSessions: ConsistencyFocusSession[];
+  overrides: ConsistencyDailyOverride[];
+  reflections: ConsistencyReflection[];
+  updatedAt: number;
+}
+
+

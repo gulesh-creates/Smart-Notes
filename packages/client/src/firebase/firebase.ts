@@ -22,7 +22,7 @@ import {
   query,
   Firestore
 } from 'firebase/firestore';
-import { Item, UserAccount, GitHubCredential } from '@smartnotes/shared';
+import { Item, UserAccount, GitHubCredential, ConsistencyVault } from '@smartnotes/shared';
 
 // Firebase configuration from .env variables with project fallbacks
 export const firebaseConfig = {
@@ -368,6 +368,53 @@ export async function fetchGitHubCredentialsFromFirestore(userId: string): Promi
   } catch (err) {
     console.warn('Firestore fetchGitHubCredentials warning:', err);
     return [];
+  }
+}
+
+// Consistency Vault System Sync Model
+export const SYS_CONSISTENCY_VAULT_ID = 'sys-consistency-data';
+
+export function makeConsistencySyncItem(vault: ConsistencyVault, userId: string): Item {
+  return {
+    id: SYS_CONSISTENCY_VAULT_ID,
+    kind: 'note',
+    parentId: null,
+    title: '__sys_consistency_data__',
+    contentHtml: '<p>System Consistency Vault Sync</p>',
+    plainText: JSON.stringify(vault),
+    isPinned: false,
+    isDeleted: false,
+    orderIndex: -9998,
+    createdAt: 1730000000000,
+    updatedAt: Date.now(),
+    version: 1,
+    assetIds: [],
+    mediaAnnotations: []
+  };
+}
+
+export function parseConsistencySyncItem(item: Item): ConsistencyVault | null {
+  if (item.id === SYS_CONSISTENCY_VAULT_ID || item.title === '__sys_consistency_data__') {
+    if (item.plainText) {
+      try {
+        const parsed = JSON.parse(item.plainText);
+        if (parsed && Array.isArray(parsed.categories)) {
+          return parsed as ConsistencyVault;
+        }
+      } catch (err) {
+        console.warn('Failed to parse Consistency sync item JSON:', err);
+      }
+    }
+  }
+  return null;
+}
+
+export async function syncConsistencyVaultToFirestore(userId: string, vault: ConsistencyVault): Promise<void> {
+  try {
+    const item = makeConsistencySyncItem(vault, userId);
+    await syncItemToFirestore(userId, item);
+  } catch (err) {
+    console.warn('Failed to sync Consistency vault to items collection:', err);
   }
 }
 

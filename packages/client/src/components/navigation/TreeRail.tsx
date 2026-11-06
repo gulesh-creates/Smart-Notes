@@ -3,18 +3,19 @@ import { Item } from '@smartnotes/shared';
 import {
   IconFolder, IconFolderOpen, IconNote, IconSubnote, IconPlus,
   IconChevronRight, IconChevronDown, IconTrash, IconPin, IconSync,
-  IconSettings, IconMove, IconEdit, IconGitHub
+  IconSettings, IconMove, IconEdit, IconGitHub, IconTarget
 } from '../icons/Icons';
 
 export interface TreeRailProps {
   items: Item[];
   selectedFolderId: string | null;
   selectedNoteId: string | null;
-  specialFilter: 'all' | 'pinned' | 'recent' | 'trash' | 'github';
+  specialFilter: 'all' | 'pinned' | 'recent' | 'trash' | 'github' | 'consistency';
   githubCount?: number;
+  consistencyStreak?: number;
   onSelectFolder: (folderId: string | null) => void;
   onSelectNote: (noteId: string) => void;
-  onSelectSpecialFilter: (filter: 'all' | 'pinned' | 'recent' | 'trash' | 'github') => void;
+  onSelectSpecialFilter: (filter: 'all' | 'pinned' | 'recent' | 'trash' | 'github' | 'consistency') => void;
   onCreateFolder: (parentId: string | null) => void;
   onRenameFolder: (folderId: string) => void;
   onCreateNote: (parentId: string | null) => void;
@@ -28,6 +29,7 @@ export const TreeRail: React.FC<TreeRailProps> = ({
   selectedNoteId,
   specialFilter,
   githubCount = 0,
+  consistencyStreak = 0,
   onSelectFolder,
   onSelectNote,
   onSelectSpecialFilter,
@@ -371,6 +373,50 @@ export const TreeRail: React.FC<TreeRailProps> = ({
           >
             {githubCount}
           </span>
+        </button>
+
+        <button
+          type="button"
+          className="btn"
+          style={{
+            justifyContent: 'flex-start',
+            border: 'none',
+            background: specialFilter === 'consistency' ? 'var(--bg-surface-subtle)' : 'transparent',
+            color: specialFilter === 'consistency' ? 'var(--text-main)' : 'var(--text-secondary)',
+            fontWeight: specialFilter === 'consistency' ? 700 : 500,
+            padding: '7px 10px',
+            borderRadius: 'var(--radius-sm)'
+          }}
+          onClick={() => onSelectSpecialFilter('consistency')}
+        >
+          <IconTarget size={16} color={specialFilter === 'consistency' ? 'var(--lime-primary)' : 'currentColor'} />
+          Consistency
+          {consistencyStreak > 0 ? (
+            <span
+              className="badge"
+              style={{
+                marginLeft: 'auto',
+                background: 'var(--lime-primary)',
+                color: 'var(--text-on-lime)',
+                fontWeight: 800,
+                fontSize: '0.72rem'
+              }}
+            >
+              🔥 {consistencyStreak}d
+            </span>
+          ) : (
+            <span
+              className="badge"
+              style={{
+                marginLeft: 'auto',
+                background: specialFilter === 'consistency' ? 'var(--lime-primary)' : undefined,
+                color: specialFilter === 'consistency' ? '#000000' : undefined,
+                fontWeight: 700
+              }}
+            >
+              Focus
+            </span>
+          )}
         </button>
       </div>
 

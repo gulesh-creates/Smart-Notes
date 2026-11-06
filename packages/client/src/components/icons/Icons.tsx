@@ -436,4 +436,76 @@ export const IconKey = baseSvg(
   'key'
 );
 
+// Consistency Tracker Icons
+export const IconTarget = baseSvg(
+  <>
+    <circle cx="12" cy="12" r="10" />
+    <circle cx="12" cy="12" r="6" />
+    <circle cx="12" cy="12" r="2" />
+  </>,
+  'target'
+);
+
+export const IconFlame = baseSvg(
+  <path d="M8.5 14.5A2.5 2.5 0 0 0 11 12c0-1.38-.5-2-1-3-1.072-2.143-.224-4.054 2-6 .5 2.5 2 4.9 4 6.5 2 1.6 3 3.5 3 5.5a7 7 0 1 1-14 0c0-1.153.433-2.294 1-3a2.5 2.5 0 0 0 2.5 2.5z" />,
+  'flame'
+);
+
+export const IconPlay = baseSvg(
+  <polygon points="5 3 19 12 5 21 5 3" fill="currentColor" />,
+  'play'
+);
+
+export const IconPause = baseSvg(
+  <>
+    <rect x="6" y="4" width="4" height="16" fill="currentColor" />
+    <rect x="14" y="4" width="4" height="16" fill="currentColor" />
+  </>,
+  'pause'
+);
+
+export const IconSkip = baseSvg(
+  <>
+    <polygon points="5 4 15 12 5 20 5 4" fill="currentColor" />
+    <line x1="19" y1="5" x2="19" y2="19" />
+  </>,
+  'skip'
+);
+
+export const IconCheckCircle = baseSvg(
+  <>
+    <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14" />
+    <polyline points="22 4 12 14.01 9 11.01" />
+  </>,
+  'check-circle'
+);
+
+export const IconBarChart = baseSvg(
+  <>
+    <line x1="18" y1="20" x2="18" y2="10" />
+    <line x1="12" y1="20" x2="12" y2="4" />
+    <line x1="6" y1="20" x2="6" y2="14" />
+  </>,
+  'bar-chart'
+);
+
+export const IconCalendar = baseSvg(
+  <>
+    <rect x="3" y="4" width="18" height="18" rx="2" ry="2" />
+    <line x1="16" y1="2" x2="16" y2="6" />
+    <line x1="8" y1="2" x2="8" y2="6" />
+    <line x1="3" y1="10" x2="21" y2="10" />
+  </>,
+  'calendar'
+);
+
+export const IconAward = baseSvg(
+  <>
+    <circle cx="12" cy="8" r="7" />
+    <polyline points="8.21 13.89 7 23 12 20 17 23 15.79 13.88" />
+  </>,
+  'award'
+);
+
+
 

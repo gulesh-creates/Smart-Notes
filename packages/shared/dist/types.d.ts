@@ -130,3 +130,84 @@ export interface GitHubCredential {
     updatedAt: number;
     userId?: string;
 }
+export interface ConsistencyCategory {
+    id: string;
+    name: string;
+    description?: string;
+    orderIndex: number;
+    color?: string;
+    isPaused?: boolean;
+    isArchived?: boolean;
+    createdAt: number;
+    updatedAt: number;
+}
+export type ConsistencyRecurrenceType = 'daily' | 'weekdays' | 'weekends' | 'custom';
+export interface ConsistencyRecurrence {
+    type: ConsistencyRecurrenceType;
+    daysOfWeek?: number[];
+}
+export interface ConsistencyActivity {
+    id: string;
+    categoryId: string;
+    title: string;
+    description?: string;
+    minMinutes: number;
+    idealMinutes?: number;
+    recurrence: ConsistencyRecurrence;
+    startDate?: string;
+    endDate?: string;
+    orderIndex: number;
+    isPaused?: boolean;
+    isArchived?: boolean;
+    createdAt: number;
+    updatedAt: number;
+}
+export interface ConsistencyDailyRecord {
+    id: string;
+    activityId: string;
+    dateKey: string;
+    isCompleted: boolean;
+    completedAt?: number;
+    actualMinutes: number;
+    notes?: string;
+    updatedAt: number;
+}
+export interface ConsistencyFocusSession {
+    id: string;
+    activityId: string;
+    dateKey: string;
+    startTimestamp: number;
+    endTimestamp: number;
+    focusedSeconds: number;
+    breakSeconds: number;
+    stagesCompleted: number;
+    source: 'timer' | 'manual';
+    notes?: string;
+    createdAt: number;
+}
+export interface ConsistencyDailyOverride {
+    id: string;
+    activityId?: string;
+    dateKey: string;
+    overrideMinMinutes?: number;
+    isMinimumDay?: boolean;
+    reason?: string;
+    createdAt: number;
+}
+export interface ConsistencyReflection {
+    id: string;
+    weekKey: string;
+    wentWell: string;
+    interrupted: string;
+    improveNext: string;
+    updatedAt: number;
+}
+export interface ConsistencyVault {
+    categories: ConsistencyCategory[];
+    activities: ConsistencyActivity[];
+    dailyRecords: ConsistencyDailyRecord[];
+    focusSessions: ConsistencyFocusSession[];
+    overrides: ConsistencyDailyOverride[];
+    reflections: ConsistencyReflection[];
+    updatedAt: number;
+}

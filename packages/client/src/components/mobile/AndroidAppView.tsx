@@ -1,13 +1,14 @@
 import React, { useState } from 'react';
-import { Item, Asset, MediaAnnotationRecord, GitHubCredential } from '@smartnotes/shared';
+import { Item, Asset, MediaAnnotationRecord, GitHubCredential, ConsistencyVault } from '@smartnotes/shared';
 import {
   IconFolder, IconNote, IconSearch, IconPin, IconSettings,
   IconPlus, IconBack, IconSync, IconChevronRight, IconImage, IconPdf,
   IconPen, IconTrash, IconUndo, IconChecklist, IconListBullet, IconQuote,
-  IconGitHub, IconKey
+  IconGitHub, IconKey, IconTarget, IconFlame
 } from '../icons/Icons';
 import { RichEditor } from '../editor/RichEditor';
 import { GitHubTokenManager } from '../github/GitHubTokenManager';
+import { ConsistencyWorkspace } from '../consistency/ConsistencyWorkspace';
 
 export interface AndroidAppViewProps {
   items: Item[];
@@ -34,6 +35,7 @@ export interface AndroidAppViewProps {
     expiresAt: number | null;
   }) => Promise<void>;
   onDeleteGitHubCredential?: (id: string) => Promise<void>;
+  onSyncConsistencyVault?: (vault: ConsistencyVault) => void;
 }
 
 export const AndroidAppView: React.FC<AndroidAppViewProps> = ({
@@ -54,12 +56,14 @@ export const AndroidAppView: React.FC<AndroidAppViewProps> = ({
   onSaveAnnotation,
   onOpenSettings,
   onSaveGitHubCredential,
-  onDeleteGitHubCredential
+  onDeleteGitHubCredential,
+  onSyncConsistencyVault
 }) => {
   const [activeTab, setActiveTab] = useState<'library' | 'search' | 'recent' | 'settings'>('library');
   const [currentFolderId, setCurrentFolderId] = useState<string | null>(null);
   const [isEditorOpen, setIsEditorOpen] = useState<boolean>(false);
   const [isGitHubOpen, setIsGitHubOpen] = useState<boolean>(false);
+  const [isConsistencyOpen, setIsConsistencyOpen] = useState<boolean>(false);
   const [searchQuery, setSearchQuery] = useState<string>('');
 
   const activeNotes = items.filter(i => i.kind === 'note' && !i.isDeleted);
@@ -104,6 +108,36 @@ export const AndroidAppView: React.FC<AndroidAppViewProps> = ({
             onSaveCredential={onSaveGitHubCredential || (async () => {})}
             onDeleteCredential={onDeleteGitHubCredential || (async () => {})}
           />
+        </div>
+      </div>
+    );
+  }
+
+  // Full-screen Consistency Tracker on Android
+  if (isConsistencyOpen) {
+    return (
+      <div className="android-fullscreen-consistency" style={{ width: '100vw', height: '100vh', display: 'flex', flexDirection: 'column', background: 'var(--bg-canvas)' }}>
+        <div
+          style={{
+            height: '52px',
+            padding: '0 12px',
+            background: 'var(--bg-surface)',
+            borderBottom: '1px solid var(--border-subtle)',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '12px'
+          }}
+        >
+          <button type="button" className="btn btn-icon btn-sm" onClick={() => setIsConsistencyOpen(false)} aria-label="Back">
+            <IconBack size={18} />
+          </button>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <IconTarget size={18} color="var(--lime-primary)" />
+            <span style={{ fontWeight: 800, fontSize: '0.95rem', color: 'var(--text-main)' }}>Consistency Tracker</span>
+          </div>
+        </div>
+        <div style={{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
+          <ConsistencyWorkspace onSyncVault={onSyncConsistencyVault} />
         </div>
       </div>
     );
@@ -204,6 +238,16 @@ export const AndroidAppView: React.FC<AndroidAppViewProps> = ({
         </div>
 
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+          <button
+            type="button"
+            className="btn btn-icon btn-sm"
+            onClick={() => setIsConsistencyOpen(true)}
+            aria-label="Consistency Tracker"
+            title="Open Consistency Tracker"
+            style={{ color: 'var(--lime-primary)' }}
+          >
+            <IconTarget size={18} />
+          </button>
           <span
             className={`badge ${cloudSyncState === 'synced' ? 'badge-lime' : ''}`}
             style={{ fontSize: '0.7rem', padding: '3px 8px' }}
@@ -465,6 +509,49 @@ export const AndroidAppView: React.FC<AndroidAppViewProps> = ({
           <div>
             <h2 style={{ fontSize: '1.1rem', fontWeight: 800, marginBottom: '14px', color: 'var(--text-main)' }}>Settings & Profile</h2>
             
+            {/* Consistency Tracker Card */}
+            <div style={{ background: 'var(--bg-surface)', border: '1.5px solid var(--lime-primary)', borderRadius: 'var(--radius-md)', padding: '16px', marginBottom: '12px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '6px' }}>
+                <IconTarget size={18} color="var(--lime-primary)" />
+                <span style={{ fontWeight: 800, fontSize: '0.92rem', color: 'var(--text-main)' }}>Consistency Tracker</span>
+                <span
+                  style={{
+                    marginLeft: 'auto',
+                    fontSize: '0.72rem',
+                    fontWeight: 800,
+                    padding: '2px 8px',
+                    borderRadius: '999px',
+                    background: 'var(--lime-primary)',
+                    color: 'var(--text-on-lime)'
+                  }}
+                >
+                  Daily Focus
+                </span>
+              </div>
+              <p style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', marginBottom: '12px' }}>
+                Start small with progressive focus cycles (5m starter → 10m momentum → 10m deep focus). Track daily streaks and reflections.
+              </p>
+              <button
+                type="button"
+                className="btn btn-sm btn-primary"
+                onClick={() => setIsConsistencyOpen(true)}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  fontWeight: 800,
+                  background: 'var(--lime-primary)',
+                  color: 'var(--text-on-lime)',
+                  border: 'none',
+                  borderRadius: 'var(--radius-pill)',
+                  padding: '8px 16px'
+                }}
+              >
+                <IconTarget size={14} />
+                Open Consistency Tracker
+              </button>
+            </div>
+
             {/* GitHub Accounts & Tokens Card */}
             <div style={{ background: 'var(--bg-surface)', border: '1px solid var(--border-subtle)', borderRadius: 'var(--radius-md)', padding: '16px', marginBottom: '12px' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '6px' }}>
