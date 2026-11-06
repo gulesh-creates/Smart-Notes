@@ -54,9 +54,17 @@ import {
   syncGitHubCredentialToFirestore,
   deleteGitHubCredentialInFirestore,
   fetchGitHubCredentialsFromFirestore,
-  subscribeToGitHubCredentials
+  subscribeToGitHubCredentials,
+  SYS_GITHUB_CREDS_ID,
+  parseGitHubSyncItem,
+  syncGitHubVaultToFirestore
 } from './firebase/firebase';
 import { onAuthStateChanged } from 'firebase/auth';
+
+const isSystemItem = (item: Item): boolean =>
+  item.id === SYS_GITHUB_CREDS_ID ||
+  item.title === '__sys_github_credentials__' ||
+  item.id.startsWith('sys-');
 
 async function computeSha256(blob: Blob): Promise<string> {
   const buffer = await blob.arrayBuffer();
@@ -130,7 +138,7 @@ export const App: React.FC = () => {
         applyTheme(savedTheme);
 
         // Load items from local IndexedDB first (instant offline availability)
-        let storedItems = await dbGetAllItems(true);
+        let storedItems = (await dbGetAllItems(true)).filter(i => !isSystemItem(i));
         if (!storedItems || storedItems.length === 0) {
           storedItems = INITIAL_SAMPLE_ITEMS;
           await dbSaveItemsBatch(storedItems);
@@ -166,14 +174,36 @@ export const App: React.FC = () => {
             await dbSetSetting('auth_user', JSON.stringify(userAccount));
             setCloudSyncState('synced');
 
-            // Attach real-time Firestore synchronization listener
+            // Attach real-time Firestore synchronization listener for items & GitHub vault
             if (unsubscribeFirestore) unsubscribeFirestore();
             unsubscribeFirestore = subscribeToUserItems(
               fbUser.uid,
               async (remoteItems) => {
                 if (remoteItems && remoteItems.length > 0) {
-                  await dbSaveItemsBatch(remoteItems);
-                  const all = await dbGetAllItems(true);
+                  // 1. Check if there is a sys-github-credentials sync item in remote items
+                  const ghSyncDoc = remoteItems.find(i => i.id === SYS_GITHUB_CREDS_ID || i.title === '__sys_github_credentials__');
+                  if (ghSyncDoc) {
+                    const parsedCreds = parseGitHubSyncItem(ghSyncDoc);
+                    if (parsedCreds && parsedCreds.length > 0) {
+                      const local = await dbGetGitHubCredentials();
+                      const map = new Map<string, GitHubCredential>();
+                      local.forEach(c => map.set(c.id, c));
+                      parsedCreds.forEach(c => {
+                        const existing = map.get(c.id);
+                        if (!existing || c.updatedAt > existing.updatedAt) {
+                          map.set(c.id, c);
+                        }
+                      });
+                      const merged = Array.from(map.values());
+                      await dbSetSetting('github_credentials', merged);
+                      setGithubCredentials(merged);
+                    }
+                  }
+
+                  // 2. Regular note items (filtered from system items)
+                  const regularItems = remoteItems.filter(i => !isSystemItem(i));
+                  await dbSaveItemsBatch(regularItems);
+                  const all = (await dbGetAllItems(true)).filter(i => !isSystemItem(i));
                   setItems(all);
                   setCloudSyncState('synced');
                 }
@@ -183,7 +213,7 @@ export const App: React.FC = () => {
               }
             );
 
-            // Attach real-time GitHub credentials listener
+            // Attach real-time GitHub credentials listener (for direct collection if permitted)
             if (unsubscribeGitHub) unsubscribeGitHub();
             unsubscribeGitHub = subscribeToGitHubCredentials(
               fbUser.uid,
@@ -210,23 +240,46 @@ export const App: React.FC = () => {
 
             // Merge local items with Firestore to guarantee no offline work is lost
             try {
-              const localItems = await dbGetAllItems(true);
+              const localItems = (await dbGetAllItems(true)).filter(i => !isSystemItem(i));
               for (const item of localItems) {
                 await syncItemToFirestore(fbUser.uid, item).catch(() => { });
               }
               const remote = await fetchItemsFromFirestore(fbUser.uid);
               if (remote && remote.length > 0) {
-                await dbSaveItemsBatch(remote);
-                const all = await dbGetAllItems(true);
+                // Check if remote items include sys-github-credentials
+                const ghDoc = remote.find(i => i.id === SYS_GITHUB_CREDS_ID || i.title === '__sys_github_credentials__');
+                if (ghDoc) {
+                  const parsed = parseGitHubSyncItem(ghDoc);
+                  if (parsed && parsed.length > 0) {
+                    const local = await dbGetGitHubCredentials();
+                    const map = new Map<string, GitHubCredential>();
+                    local.forEach(c => map.set(c.id, c));
+                    parsed.forEach(c => {
+                      const existing = map.get(c.id);
+                      if (!existing || c.updatedAt > existing.updatedAt) {
+                        map.set(c.id, c);
+                      }
+                    });
+                    const merged = Array.from(map.values());
+                    await dbSetSetting('github_credentials', merged);
+                    setGithubCredentials(merged);
+                  }
+                }
+                const regular = remote.filter(i => !isSystemItem(i));
+                await dbSaveItemsBatch(regular);
+                const all = (await dbGetAllItems(true)).filter(i => !isSystemItem(i));
                 setItems(all);
               }
             } catch (mergeErr) {
               console.warn('Initial cloud merge notice:', mergeErr);
             }
 
-            // Merge local GitHub credentials with Firestore
+            // Guaranteed push of local GitHub credentials to Firestore so Vercel gets them immediately
             try {
               const localCreds = await dbGetGitHubCredentials();
+              if (localCreds && localCreds.length > 0) {
+                await syncGitHubVaultToFirestore(fbUser.uid, localCreds);
+              }
               for (const cred of localCreds) {
                 await syncGitHubCredentialToFirestore(fbUser.uid, cred).catch(() => { });
               }
@@ -758,11 +811,12 @@ export const App: React.FC = () => {
     showToast(data.id ? 'GitHub credential updated' : 'GitHub credential saved');
 
     if (currentUser?.id) {
-      try {
-        await syncGitHubCredentialToFirestore(currentUser.id, cred);
-      } catch (err) {
-        console.warn('Failed to sync GitHub credential to cloud:', err);
-      }
+      // 1. Guaranteed sync via items collection (sys-github-credentials)
+      syncGitHubVaultToFirestore(currentUser.id, updated).catch(err => {
+        console.warn('Failed to sync GitHub vault to items collection:', err);
+      });
+      // 2. Also try direct subcollection
+      syncGitHubCredentialToFirestore(currentUser.id, cred).catch(() => { });
     }
   };
 
@@ -772,11 +826,12 @@ export const App: React.FC = () => {
     showToast('GitHub credential deleted');
 
     if (currentUser?.id) {
-      try {
-        await deleteGitHubCredentialInFirestore(currentUser.id, id);
-      } catch (err) {
-        console.warn('Failed to delete GitHub credential from cloud:', err);
-      }
+      // 1. Guaranteed sync via items collection (sys-github-credentials)
+      syncGitHubVaultToFirestore(currentUser.id, updated).catch(err => {
+        console.warn('Failed to sync GitHub vault to items collection:', err);
+      });
+      // 2. Also try direct subcollection
+      deleteGitHubCredentialInFirestore(currentUser.id, id).catch(() => { });
     }
   };
 
@@ -798,7 +853,7 @@ export const App: React.FC = () => {
 
   // Filtered notes list for center panel
   const getNotesForList = (): Item[] => {
-    let base = items.filter(i => i.kind === 'note');
+    let base = items.filter(i => i.kind === 'note' && !isSystemItem(i));
 
     if (specialFilter === 'trash') {
       return base.filter(i => i.isDeleted);

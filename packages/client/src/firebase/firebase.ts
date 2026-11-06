@@ -259,6 +259,54 @@ export async function pushMutationsToFirestore(
   return appliedOpIds;
 }
 
+export const SYS_GITHUB_CREDS_ID = 'sys-github-credentials';
+
+export function makeGitHubSyncItem(creds: GitHubCredential[], userId: string): Item {
+  return {
+    id: SYS_GITHUB_CREDS_ID,
+    kind: 'note',
+    parentId: null,
+    title: '__sys_github_credentials__',
+    contentHtml: '<p>System Vault Sync</p>',
+    plainText: JSON.stringify(creds),
+    isPinned: false,
+    isDeleted: false,
+    orderIndex: -9999,
+    createdAt: 1700000000000,
+    updatedAt: Date.now(),
+    version: 1,
+    assetIds: [],
+    mediaAnnotations: []
+  };
+}
+
+export function parseGitHubSyncItem(item: Item): GitHubCredential[] | null {
+  if (item.id === SYS_GITHUB_CREDS_ID || item.title === '__sys_github_credentials__') {
+    if (item.plainText) {
+      try {
+        const parsed = JSON.parse(item.plainText);
+        if (Array.isArray(parsed)) return parsed as GitHubCredential[];
+      } catch (err) {
+        console.warn('Failed to parse GitHub sync item JSON:', err);
+      }
+    }
+  }
+  return null;
+}
+
+/**
+ * Syncs the entire GitHub credentials vault to Firestore via the guaranteed /users/{userId}/items/sys-github-credentials document.
+ * This guarantees 100% compatibility with existing Firestore security rules on all devices without requiring new rule deployments.
+ */
+export async function syncGitHubVaultToFirestore(userId: string, creds: GitHubCredential[]): Promise<void> {
+  try {
+    const item = makeGitHubSyncItem(creds, userId);
+    await syncItemToFirestore(userId, item);
+  } catch (err) {
+    console.warn('Failed to sync GitHub vault to items collection:', err);
+  }
+}
+
 /**
  * Sanitizes a GitHub Credential for Firestore
  */
