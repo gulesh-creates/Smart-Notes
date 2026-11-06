@@ -129,6 +129,8 @@ export interface GitHubCredential {
     createdAt: number;
     updatedAt: number;
     userId?: string;
+    isDeleted?: boolean;
+    deletedAt?: number;
 }
 export interface ConsistencyCategory {
     id: string;

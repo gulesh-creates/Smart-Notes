@@ -152,6 +152,8 @@ export interface GitHubCredential {
   createdAt: number;
   updatedAt: number;
   userId?: string;
+  isDeleted?: boolean;
+  deletedAt?: number;
 }
 
 // Consistency Tracker Models

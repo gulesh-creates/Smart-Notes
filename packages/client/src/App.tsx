@@ -43,7 +43,11 @@ import {
   dbRemoveOutboxMutations,
   dbGetGitHubCredentials,
   dbSaveGitHubCredential,
-  dbDeleteGitHubCredential
+  dbDeleteGitHubCredential,
+  dbGetGitHubDeletedTombstones,
+  dbGetGitHubVaultUpdatedAt,
+  dbSetGitHubVaultUpdatedAt,
+  reconcileGitHubCredentials
 } from './storage/db';
 import {
   dbGetConsistencyVault,
@@ -208,20 +212,23 @@ export const App: React.FC = () => {
                     // 1. Check if there is a sys-github-credentials sync item in remote items
                     const ghSyncDoc = remoteItems.find(i => i.id === SYS_GITHUB_CREDS_ID || i.title === '__sys_github_credentials__');
                     if (ghSyncDoc) {
-                      const parsedCreds = parseGitHubSyncItem(ghSyncDoc);
-                      if (parsedCreds && parsedCreds.length > 0) {
+                      const parsed = parseGitHubSyncItem(ghSyncDoc);
+                      if (parsed) {
                         const local = await dbGetGitHubCredentials();
-                        const map = new Map<string, GitHubCredential>();
-                        local.forEach(c => map.set(c.id, c));
-                        parsedCreds.forEach(c => {
-                          const existing = map.get(c.id);
-                          if (!existing || c.updatedAt > existing.updatedAt) {
-                            map.set(c.id, c);
-                          }
-                        });
-                        const merged = Array.from(map.values());
-                        await dbSetSetting('github_credentials', merged);
-                        setGithubCredentials(merged);
+                        const tombstones = await dbGetGitHubDeletedTombstones();
+                        const localVaultTime = await dbGetGitHubVaultUpdatedAt();
+
+                        let reconciled: GitHubCredential[];
+                        if (parsed.updatedAt > localVaultTime) {
+                          // Remote vault is newer: accept remote creds filtered by local tombstones
+                          reconciled = reconcileGitHubCredentials([], parsed.credentials, tombstones);
+                          await dbSetGitHubVaultUpdatedAt(parsed.updatedAt);
+                        } else {
+                          // Local is equal or newer: reconcile local with remote creds
+                          reconciled = reconcileGitHubCredentials(local, parsed.credentials, tombstones);
+                        }
+                        await dbSetSetting('github_credentials', reconciled);
+                        setGithubCredentials(reconciled);
                       }
                     }
 
@@ -259,17 +266,10 @@ export const App: React.FC = () => {
                 async (remoteCreds) => {
                   if (remoteCreds) {
                     const local = await dbGetGitHubCredentials();
-                    const map = new Map<string, GitHubCredential>();
-                    local.forEach(c => map.set(c.id, c));
-                    remoteCreds.forEach(c => {
-                      const existing = map.get(c.id);
-                      if (!existing || c.updatedAt > existing.updatedAt) {
-                        map.set(c.id, c);
-                      }
-                    });
-                    const merged = Array.from(map.values());
-                    await dbSetSetting('github_credentials', merged);
-                    setGithubCredentials(merged);
+                    const tombstones = await dbGetGitHubDeletedTombstones();
+                    const reconciled = reconcileGitHubCredentials(local, remoteCreds, tombstones);
+                    await dbSetSetting('github_credentials', reconciled);
+                    setGithubCredentials(reconciled);
                   }
                 },
                 (err) => {
@@ -289,19 +289,20 @@ export const App: React.FC = () => {
                   const ghDoc = remote.find(i => i.id === SYS_GITHUB_CREDS_ID || i.title === '__sys_github_credentials__');
                   if (ghDoc) {
                     const parsed = parseGitHubSyncItem(ghDoc);
-                    if (parsed && parsed.length > 0) {
+                    if (parsed) {
                       const local = await dbGetGitHubCredentials();
-                      const map = new Map<string, GitHubCredential>();
-                      local.forEach(c => map.set(c.id, c));
-                      parsed.forEach(c => {
-                        const existing = map.get(c.id);
-                        if (!existing || c.updatedAt > existing.updatedAt) {
-                          map.set(c.id, c);
-                        }
-                      });
-                      const merged = Array.from(map.values());
-                      await dbSetSetting('github_credentials', merged);
-                      setGithubCredentials(merged);
+                      const tombstones = await dbGetGitHubDeletedTombstones();
+                      const localVaultTime = await dbGetGitHubVaultUpdatedAt();
+
+                      let reconciled: GitHubCredential[];
+                      if (parsed.updatedAt > localVaultTime) {
+                        reconciled = reconcileGitHubCredentials([], parsed.credentials, tombstones);
+                        await dbSetGitHubVaultUpdatedAt(parsed.updatedAt);
+                      } else {
+                        reconciled = reconcileGitHubCredentials(local, parsed.credentials, tombstones);
+                      }
+                      await dbSetSetting('github_credentials', reconciled);
+                      setGithubCredentials(reconciled);
                     }
                   }
 
@@ -330,25 +331,18 @@ export const App: React.FC = () => {
               // Guaranteed push of local GitHub credentials to Firestore so Vercel gets them immediately
               try {
                 const localCreds = await dbGetGitHubCredentials();
-                if (localCreds && localCreds.length > 0) {
-                  await syncGitHubVaultToFirestore(fbUser.uid, localCreds);
-                }
+                const tombstones = await dbGetGitHubDeletedTombstones();
+                const vaultUpdatedAt = await dbGetGitHubVaultUpdatedAt();
+
+                await syncGitHubVaultToFirestore(fbUser.uid, localCreds, vaultUpdatedAt);
                 for (const cred of localCreds) {
                   await syncGitHubCredentialToFirestore(fbUser.uid, cred).catch(() => { });
                 }
                 const remoteCreds = await fetchGitHubCredentialsFromFirestore(fbUser.uid);
-                if (remoteCreds && remoteCreds.length > 0) {
-                  const map = new Map<string, GitHubCredential>();
-                  localCreds.forEach(c => map.set(c.id, c));
-                  remoteCreds.forEach(c => {
-                    const existing = map.get(c.id);
-                    if (!existing || c.updatedAt > existing.updatedAt) {
-                      map.set(c.id, c);
-                    }
-                  });
-                  const merged = Array.from(map.values());
-                  await dbSetSetting('github_credentials', merged);
-                  setGithubCredentials(merged);
+                if (remoteCreds) {
+                  const reconciled = reconcileGitHubCredentials(localCreds, remoteCreds, tombstones);
+                  await dbSetSetting('github_credentials', reconciled);
+                  setGithubCredentials(reconciled);
                 }
               } catch (credMergeErr) {
                 console.warn('Initial GitHub cloud merge notice:', credMergeErr);
@@ -891,8 +885,9 @@ export const App: React.FC = () => {
     showToast(data.id ? 'GitHub credential updated' : 'GitHub credential saved');
 
     if (currentUser?.id) {
+      const vaultUpdatedAt = await dbGetGitHubVaultUpdatedAt();
       // 1. Guaranteed sync via items collection (sys-github-credentials)
-      syncGitHubVaultToFirestore(currentUser.id, updated).catch(err => {
+      await syncGitHubVaultToFirestore(currentUser.id, updated, vaultUpdatedAt).catch(err => {
         console.warn('Failed to sync GitHub vault to items collection:', err);
       });
       // 2. Also try direct subcollection
@@ -906,12 +901,13 @@ export const App: React.FC = () => {
     showToast('GitHub credential deleted');
 
     if (currentUser?.id) {
-      // 1. Guaranteed sync via items collection (sys-github-credentials)
-      syncGitHubVaultToFirestore(currentUser.id, updated).catch(err => {
+      const vaultUpdatedAt = await dbGetGitHubVaultUpdatedAt();
+      // 1. Guaranteed sync via items collection (sys-github-credentials) with updated list
+      await syncGitHubVaultToFirestore(currentUser.id, updated, vaultUpdatedAt).catch(err => {
         console.warn('Failed to sync GitHub vault to items collection:', err);
       });
-      // 2. Also try direct subcollection
-      deleteGitHubCredentialInFirestore(currentUser.id, id).catch(() => { });
+      // 2. Also clean up direct subcollection document
+      await deleteGitHubCredentialInFirestore(currentUser.id, id).catch(() => { });
     }
   };
 

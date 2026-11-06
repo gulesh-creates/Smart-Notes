@@ -229,30 +229,111 @@ export async function dbSetSetting<T>(key: string, value: T): Promise<void> {
   });
 }
 
-// GitHub Credentials Management
+// GitHub Credentials Management with Tombstone Tracking
 export async function dbGetGitHubCredentials(): Promise<GitHubCredential[]> {
-  return dbGetSetting<GitHubCredential[]>('github_credentials', []);
+  const all = await dbGetSetting<GitHubCredential[]>('github_credentials', []);
+  return all.filter(c => !c.isDeleted);
+}
+
+export async function dbGetGitHubDeletedTombstones(): Promise<Record<string, number>> {
+  return dbGetSetting<Record<string, number>>('github_deleted_tombstones', {});
 }
 
 export async function dbSaveGitHubCredential(credential: GitHubCredential): Promise<GitHubCredential[]> {
-  const all = await dbGetGitHubCredentials();
+  const now = Date.now();
+  const all = await dbGetSetting<GitHubCredential[]>('github_credentials', []);
   const index = all.findIndex(c => c.id === credential.id);
+  const updatedCred: GitHubCredential = {
+    ...credential,
+    isDeleted: false,
+    updatedAt: now
+  };
   let updated: GitHubCredential[];
   if (index >= 0) {
     updated = [...all];
-    updated[index] = { ...credential, updatedAt: Date.now() };
+    updated[index] = updatedCred;
   } else {
-    updated = [credential, ...all];
+    updated = [updatedCred, ...all];
   }
+
+  // Clear tombstone if previously deleted
+  const tombstones = await dbGetGitHubDeletedTombstones();
+  if (tombstones[credential.id]) {
+    delete tombstones[credential.id];
+    await dbSetSetting('github_deleted_tombstones', tombstones);
+  }
+
   await dbSetSetting('github_credentials', updated);
-  return updated;
+  await dbSetSetting('github_vault_updated_at', now);
+  return updated.filter(c => !c.isDeleted);
 }
 
 export async function dbDeleteGitHubCredential(id: string): Promise<GitHubCredential[]> {
-  const all = await dbGetGitHubCredentials();
+  const now = Date.now();
+  const all = await dbGetSetting<GitHubCredential[]>('github_credentials', []);
   const updated = all.filter(c => c.id !== id);
+
+  // Record persistent deletion tombstone with timestamp
+  const tombstones = await dbGetGitHubDeletedTombstones();
+  tombstones[id] = now;
+  await dbSetSetting('github_deleted_tombstones', tombstones);
+
   await dbSetSetting('github_credentials', updated);
+  await dbSetSetting('github_vault_updated_at', now);
   return updated;
+}
+
+export async function dbGetGitHubVaultUpdatedAt(): Promise<number> {
+  return dbGetSetting<number>('github_vault_updated_at', 0);
+}
+
+export async function dbSetGitHubVaultUpdatedAt(timestamp: number): Promise<void> {
+  await dbSetSetting('github_vault_updated_at', timestamp);
+}
+
+/**
+ * Reconciles local and incoming remote GitHub credentials.
+ * Guarantees that any credential deleted locally (tombstone) is NEVER resurrected by stale remote copies.
+ */
+export function reconcileGitHubCredentials(
+  localCreds: GitHubCredential[],
+  remoteCreds: GitHubCredential[],
+  tombstones: Record<string, number> = {}
+): GitHubCredential[] {
+  const map = new Map<string, GitHubCredential>();
+
+  // 1. Populate with valid local credentials
+  for (const c of localCreds) {
+    if (c && !c.isDeleted) {
+      const tombstoneTime = tombstones[c.id];
+      if (!tombstoneTime || c.updatedAt > tombstoneTime) {
+        map.set(c.id, c);
+      }
+    }
+  }
+
+  // 2. Merge incoming remote credentials
+  for (const r of remoteCreds) {
+    if (!r) continue;
+    // Discard if explicitly marked deleted
+    if (r.isDeleted) {
+      map.delete(r.id);
+      continue;
+    }
+
+    // Discard if deleted locally and remote is not strictly newer than deletion
+    const tombstoneTime = tombstones[r.id];
+    if (tombstoneTime && tombstoneTime >= (r.updatedAt || 0)) {
+      continue;
+    }
+
+    const existing = map.get(r.id);
+    if (!existing || (r.updatedAt || 0) > (existing.updatedAt || 0)) {
+      map.set(r.id, r);
+    }
+  }
+
+  return Array.from(map.values());
 }
 
 // Clear all local database data

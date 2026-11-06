@@ -279,31 +279,46 @@ export async function pushMutationsToFirestore(
 
 export const SYS_GITHUB_CREDS_ID = 'sys-github-credentials';
 
-export function makeGitHubSyncItem(creds: GitHubCredential[], userId: string): Item {
+export function makeGitHubSyncItem(creds: GitHubCredential[], userId: string, vaultUpdatedAt?: number): Item {
+  const ts = vaultUpdatedAt || Date.now();
   return {
     id: SYS_GITHUB_CREDS_ID,
     kind: 'note',
     parentId: null,
     title: '__sys_github_credentials__',
     contentHtml: '<p>System Vault Sync</p>',
-    plainText: JSON.stringify(creds),
+    plainText: JSON.stringify({
+      credentials: creds.filter(c => !c.isDeleted),
+      updatedAt: ts
+    }),
     isPinned: false,
     isDeleted: false,
     orderIndex: -9999,
     createdAt: 1700000000000,
-    updatedAt: Date.now(),
+    updatedAt: ts,
     version: 1,
     assetIds: [],
     mediaAnnotations: []
   };
 }
 
-export function parseGitHubSyncItem(item: Item): GitHubCredential[] | null {
+export function parseGitHubSyncItem(item: Item): { credentials: GitHubCredential[]; updatedAt: number } | null {
   if (item.id === SYS_GITHUB_CREDS_ID || item.title === '__sys_github_credentials__') {
     if (item.plainText) {
       try {
         const parsed = JSON.parse(item.plainText);
-        if (Array.isArray(parsed)) return parsed as GitHubCredential[];
+        if (Array.isArray(parsed)) {
+          return {
+            credentials: parsed.filter(c => c && !c.isDeleted) as GitHubCredential[],
+            updatedAt: item.updatedAt || Date.now()
+          };
+        }
+        if (parsed && Array.isArray(parsed.credentials)) {
+          return {
+            credentials: parsed.credentials.filter((c: any) => c && !c.isDeleted) as GitHubCredential[],
+            updatedAt: typeof parsed.updatedAt === 'number' ? parsed.updatedAt : (item.updatedAt || Date.now())
+          };
+        }
       } catch (err) {
         console.warn('Failed to parse GitHub sync item JSON:', err);
       }
@@ -316,9 +331,9 @@ export function parseGitHubSyncItem(item: Item): GitHubCredential[] | null {
  * Syncs the entire GitHub credentials vault to Firestore via the guaranteed /users/{userId}/items/sys-github-credentials document.
  * This guarantees 100% compatibility with existing Firestore security rules on all devices without requiring new rule deployments.
  */
-export async function syncGitHubVaultToFirestore(userId: string, creds: GitHubCredential[]): Promise<void> {
+export async function syncGitHubVaultToFirestore(userId: string, creds: GitHubCredential[], vaultUpdatedAt?: number): Promise<void> {
   try {
-    const item = makeGitHubSyncItem(creds, userId);
+    const item = makeGitHubSyncItem(creds, userId, vaultUpdatedAt);
     await syncItemToFirestore(userId, item);
   } catch (err) {
     console.warn('Failed to sync GitHub vault to items collection:', err);
@@ -335,7 +350,8 @@ export function sanitizeGitHubCredentialForFirestore(cred: GitHubCredential, use
     token: String(cred.token || '').trim(),
     createdAt: typeof cred.createdAt === 'number' && cred.createdAt > 0 ? cred.createdAt : Date.now(),
     updatedAt: Date.now(),
-    userId: userId
+    userId: userId,
+    isDeleted: Boolean(cred.isDeleted)
   };
 
   if (cred.label && typeof cred.label === 'string') {
@@ -343,6 +359,9 @@ export function sanitizeGitHubCredentialForFirestore(cred: GitHubCredential, use
   }
   if (cred.expiresAt !== undefined) {
     clean.expiresAt = cred.expiresAt;
+  }
+  if (cred.deletedAt !== undefined) {
+    clean.deletedAt = cred.deletedAt;
   }
 
   return clean;
@@ -370,10 +389,18 @@ export async function deleteGitHubCredentialInFirestore(userId: string, credId: 
   if (!firestore) return;
   try {
     const credRef = doc(firestore, 'users', userId, 'github_credentials', credId);
-    await deleteDoc(credRef);
+    // Mark as isDeleted tombstone first
+    await setDoc(credRef, {
+      id: credId,
+      isDeleted: true,
+      deletedAt: Date.now(),
+      updatedAt: Date.now(),
+      userId: userId
+    }, { merge: true }).catch(() => {});
+    // Also attempt hard deleteDoc
+    await deleteDoc(credRef).catch(() => {});
   } catch (err) {
     console.warn('Firestore deleteGitHubCredential warning:', err);
-    throw err;
   }
 }
 
@@ -385,7 +412,9 @@ export async function fetchGitHubCredentialsFromFirestore(userId: string): Promi
   try {
     const coll = collection(firestore, 'users', userId, 'github_credentials');
     const snap = await getDocs(coll);
-    return snap.docs.map(d => d.data() as GitHubCredential);
+    return snap.docs
+      .map(d => d.data() as GitHubCredential)
+      .filter(c => c && !c.isDeleted);
   } catch (err) {
     console.warn('Firestore fetchGitHubCredentials warning:', err);
     return [];
@@ -455,7 +484,10 @@ export function subscribeToGitHubCredentials(
     (snapshot) => {
       const creds: GitHubCredential[] = [];
       snapshot.forEach(docSnap => {
-        creds.push(docSnap.data() as GitHubCredential);
+        const c = docSnap.data() as GitHubCredential;
+        if (c && !c.isDeleted) {
+          creds.push(c);
+        }
       });
       onUpdate(creds);
     },

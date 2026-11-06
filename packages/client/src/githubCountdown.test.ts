@@ -1,6 +1,8 @@
 import { test, describe } from 'node:test';
 import assert from 'node:assert';
 import { formatLiveCountdown } from './components/github/GitHubTokenManager';
+import { reconcileGitHubCredentials } from './storage/db';
+import { GitHubCredential } from '@smartnotes/shared';
 
 describe('GitHub Token Countdown & Expiration Formatting', () => {
   const baseTime = 1700000000000; // Reference timestamp
@@ -53,6 +55,62 @@ describe('GitHub Token Countdown & Expiration Formatting', () => {
     const res = formatLiveCountdown(expiredAt, baseTime);
     assert.strictEqual(res.status, 'expired');
     assert.ok(res.text.includes('Expired 3 hours ago'));
+  });
+});
+
+describe('GitHub Credentials Reconciliation & Deletion Preservation', () => {
+  const tokenA: GitHubCredential = {
+    id: 'tok-a',
+    username: 'userA',
+    token: 'ghp_tokenA',
+    label: 'Token A',
+    expiresAt: null,
+    createdAt: 1000,
+    updatedAt: 1000
+  };
+
+  const tokenB: GitHubCredential = {
+    id: 'tok-b',
+    username: 'userB',
+    token: 'ghp_tokenB',
+    label: 'Token B',
+    expiresAt: null,
+    createdAt: 1000,
+    updatedAt: 1000
+  };
+
+  test('prevents deleted token from being resurrected by stale remote sync', () => {
+    // Token B was deleted locally at timestamp 2000
+    const local = [tokenA];
+    const remote = [tokenA, tokenB]; // Remote still has older Token B (updatedAt: 1000)
+    const tombstones = { 'tok-b': 2000 };
+
+    const result = reconcileGitHubCredentials(local, remote, tombstones);
+    assert.strictEqual(result.length, 1);
+    assert.strictEqual(result[0].id, 'tok-a');
+    assert.strictEqual(result.find(c => c.id === 'tok-b'), undefined);
+  });
+
+  test('discards credentials with isDeleted flag', () => {
+    const remote = [
+      tokenA,
+      { ...tokenB, isDeleted: true, updatedAt: 3000 }
+    ];
+    const result = reconcileGitHubCredentials([], remote, {});
+    assert.strictEqual(result.length, 1);
+    assert.strictEqual(result[0].id, 'tok-a');
+  });
+
+  test('allows re-created or newer remote token if updatedAt is after tombstone', () => {
+    const tombstones = { 'tok-b': 2000 };
+    // Remote has an updated/recreated Token B at timestamp 3000 (after tombstone)
+    const newerTokenB: GitHubCredential = {
+      ...tokenB,
+      updatedAt: 3000
+    };
+    const result = reconcileGitHubCredentials([tokenA], [tokenA, newerTokenB], tombstones);
+    assert.strictEqual(result.length, 2);
+    assert.ok(result.some(c => c.id === 'tok-b'));
   });
 });
 
