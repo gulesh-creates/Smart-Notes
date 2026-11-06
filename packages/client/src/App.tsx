@@ -143,6 +143,7 @@ export const App: React.FC = () => {
   useEffect(() => {
     let unsubscribeFirestore: (() => void) | null = null;
     let unsubscribeGitHub: (() => void) | null = null;
+    let unsubscribeAuth: (() => void) | null = null;
 
     const initApp = async () => {
       try {
@@ -183,35 +184,116 @@ export const App: React.FC = () => {
         }
 
         // Setup Firebase Auth State Listener for real-time cloud sync across devices
-        onAuthStateChanged(auth, async (fbUser) => {
-          if (fbUser) {
-            const userAccount: UserAccount = {
-              id: fbUser.uid,
-              email: fbUser.email || `${fbUser.displayName || 'user'}@smartnotes.app`,
-              displayName: fbUser.displayName || (fbUser.email ? fbUser.email.split('@')[0] : 'gulesh_creates'),
-              createdAt: Date.now()
-            };
-            setAuthToken(fbUser.uid);
-            setCurrentUser(userAccount);
-            await dbSetSetting('auth_token', fbUser.uid);
-            await dbSetSetting('auth_user', JSON.stringify(userAccount));
-            setCloudSyncState('synced');
+        if (auth) {
+          unsubscribeAuth = onAuthStateChanged(auth, async (fbUser) => {
+            if (fbUser) {
+              const userAccount: UserAccount = {
+                id: fbUser.uid,
+                email: fbUser.email || `${fbUser.displayName || 'user'}@smartnotes.app`,
+                displayName: fbUser.displayName || (fbUser.email ? fbUser.email.split('@')[0] : 'gulesh_creates'),
+                createdAt: Date.now()
+              };
+              setAuthToken(fbUser.uid);
+              setCurrentUser(userAccount);
+              await dbSetSetting('auth_token', fbUser.uid);
+              await dbSetSetting('auth_user', JSON.stringify(userAccount));
+              setCloudSyncState('synced');
 
-            // Attach real-time Firestore synchronization listener for items & GitHub vault
-            if (unsubscribeFirestore) unsubscribeFirestore();
-            unsubscribeFirestore = subscribeToUserItems(
-              fbUser.uid,
-              async (remoteItems) => {
-                if (remoteItems && remoteItems.length > 0) {
-                  // 1. Check if there is a sys-github-credentials sync item in remote items
-                  const ghSyncDoc = remoteItems.find(i => i.id === SYS_GITHUB_CREDS_ID || i.title === '__sys_github_credentials__');
-                  if (ghSyncDoc) {
-                    const parsedCreds = parseGitHubSyncItem(ghSyncDoc);
-                    if (parsedCreds && parsedCreds.length > 0) {
+              // Attach real-time Firestore synchronization listener for items & GitHub vault
+              if (unsubscribeFirestore) unsubscribeFirestore();
+              unsubscribeFirestore = subscribeToUserItems(
+                fbUser.uid,
+                async (remoteItems) => {
+                  if (remoteItems && remoteItems.length > 0) {
+                    // 1. Check if there is a sys-github-credentials sync item in remote items
+                    const ghSyncDoc = remoteItems.find(i => i.id === SYS_GITHUB_CREDS_ID || i.title === '__sys_github_credentials__');
+                    if (ghSyncDoc) {
+                      const parsedCreds = parseGitHubSyncItem(ghSyncDoc);
+                      if (parsedCreds && parsedCreds.length > 0) {
+                        const local = await dbGetGitHubCredentials();
+                        const map = new Map<string, GitHubCredential>();
+                        local.forEach(c => map.set(c.id, c));
+                        parsedCreds.forEach(c => {
+                          const existing = map.get(c.id);
+                          if (!existing || c.updatedAt > existing.updatedAt) {
+                            map.set(c.id, c);
+                          }
+                        });
+                        const merged = Array.from(map.values());
+                        await dbSetSetting('github_credentials', merged);
+                        setGithubCredentials(merged);
+                      }
+                    }
+
+                    // 2. Check if there is a sys-consistency-data sync item in remote items
+                    const consistencySyncDoc = remoteItems.find(i => i.id === SYS_CONSISTENCY_VAULT_ID || i.title === '__sys_consistency_data__');
+                    if (consistencySyncDoc) {
+                      const parsedVault = parseConsistencySyncItem(consistencySyncDoc);
+                      if (parsedVault) {
+                        const localVault = await dbGetConsistencyVault();
+                        if (!localVault || parsedVault.updatedAt > localVault.updatedAt) {
+                          await dbSaveConsistencyVault(parsedVault);
+                          const strk = calculateStreak(parsedVault);
+                          setConsistencyStreak(strk.currentStreak);
+                        }
+                      }
+                    }
+
+                    // 3. Regular note items (filtered from system items)
+                    const regularItems = remoteItems.filter(i => !isSystemItem(i));
+                    await dbSaveItemsBatch(regularItems);
+                    const all = (await dbGetAllItems(true)).filter(i => !isSystemItem(i));
+                    setItems(all);
+                    setCloudSyncState('synced');
+                  }
+                },
+                (err) => {
+                  console.warn('Real-time sync notice:', err);
+                }
+              );
+
+              // Attach real-time GitHub credentials listener (for direct collection if permitted)
+              if (unsubscribeGitHub) unsubscribeGitHub();
+              unsubscribeGitHub = subscribeToGitHubCredentials(
+                fbUser.uid,
+                async (remoteCreds) => {
+                  if (remoteCreds) {
+                    const local = await dbGetGitHubCredentials();
+                    const map = new Map<string, GitHubCredential>();
+                    local.forEach(c => map.set(c.id, c));
+                    remoteCreds.forEach(c => {
+                      const existing = map.get(c.id);
+                      if (!existing || c.updatedAt > existing.updatedAt) {
+                        map.set(c.id, c);
+                      }
+                    });
+                    const merged = Array.from(map.values());
+                    await dbSetSetting('github_credentials', merged);
+                    setGithubCredentials(merged);
+                  }
+                },
+                (err) => {
+                  console.warn('Real-time GitHub credentials notice:', err);
+                }
+              );
+
+              // Merge local items with Firestore to guarantee no offline work is lost
+              try {
+                const localItems = (await dbGetAllItems(true)).filter(i => !isSystemItem(i));
+                for (const item of localItems) {
+                  await syncItemToFirestore(fbUser.uid, item).catch(() => { });
+                }
+                const remote = await fetchItemsFromFirestore(fbUser.uid);
+                if (remote && remote.length > 0) {
+                  // Check if remote items include sys-github-credentials
+                  const ghDoc = remote.find(i => i.id === SYS_GITHUB_CREDS_ID || i.title === '__sys_github_credentials__');
+                  if (ghDoc) {
+                    const parsed = parseGitHubSyncItem(ghDoc);
+                    if (parsed && parsed.length > 0) {
                       const local = await dbGetGitHubCredentials();
                       const map = new Map<string, GitHubCredential>();
                       local.forEach(c => map.set(c.id, c));
-                      parsedCreds.forEach(c => {
+                      parsed.forEach(c => {
                         const existing = map.get(c.id);
                         if (!existing || c.updatedAt > existing.updatedAt) {
                           map.set(c.id, c);
@@ -223,10 +305,10 @@ export const App: React.FC = () => {
                     }
                   }
 
-                  // 2. Check if there is a sys-consistency-data sync item in remote items
-                  const consistencySyncDoc = remoteItems.find(i => i.id === SYS_CONSISTENCY_VAULT_ID || i.title === '__sys_consistency_data__');
-                  if (consistencySyncDoc) {
-                    const parsedVault = parseConsistencySyncItem(consistencySyncDoc);
+                  // Check if remote items include sys-consistency-data
+                  const consistencyDoc = remote.find(i => i.id === SYS_CONSISTENCY_VAULT_ID || i.title === '__sys_consistency_data__');
+                  if (consistencyDoc) {
+                    const parsedVault = parseConsistencySyncItem(consistencyDoc);
                     if (parsedVault) {
                       const localVault = await dbGetConsistencyVault();
                       if (!localVault || parsedVault.updatedAt > localVault.updatedAt) {
@@ -236,29 +318,28 @@ export const App: React.FC = () => {
                       }
                     }
                   }
-
-                  // 3. Regular note items (filtered from system items)
-                  const regularItems = remoteItems.filter(i => !isSystemItem(i));
-                  await dbSaveItemsBatch(regularItems);
+                  const regular = remote.filter(i => !isSystemItem(i));
+                  await dbSaveItemsBatch(regular);
                   const all = (await dbGetAllItems(true)).filter(i => !isSystemItem(i));
                   setItems(all);
-                  setCloudSyncState('synced');
                 }
-              },
-              (err) => {
-                console.warn('Real-time sync notice:', err);
+              } catch (mergeErr) {
+                console.warn('Initial cloud merge notice:', mergeErr);
               }
-            );
 
-            // Attach real-time GitHub credentials listener (for direct collection if permitted)
-            if (unsubscribeGitHub) unsubscribeGitHub();
-            unsubscribeGitHub = subscribeToGitHubCredentials(
-              fbUser.uid,
-              async (remoteCreds) => {
-                if (remoteCreds) {
-                  const local = await dbGetGitHubCredentials();
+              // Guaranteed push of local GitHub credentials to Firestore so Vercel gets them immediately
+              try {
+                const localCreds = await dbGetGitHubCredentials();
+                if (localCreds && localCreds.length > 0) {
+                  await syncGitHubVaultToFirestore(fbUser.uid, localCreds);
+                }
+                for (const cred of localCreds) {
+                  await syncGitHubCredentialToFirestore(fbUser.uid, cred).catch(() => { });
+                }
+                const remoteCreds = await fetchGitHubCredentialsFromFirestore(fbUser.uid);
+                if (remoteCreds && remoteCreds.length > 0) {
                   const map = new Map<string, GitHubCredential>();
-                  local.forEach(c => map.set(c.id, c));
+                  localCreds.forEach(c => map.set(c.id, c));
                   remoteCreds.forEach(c => {
                     const existing = map.get(c.id);
                     if (!existing || c.updatedAt > existing.updatedAt) {
@@ -269,124 +350,61 @@ export const App: React.FC = () => {
                   await dbSetSetting('github_credentials', merged);
                   setGithubCredentials(merged);
                 }
-              },
-              (err) => {
-                console.warn('Real-time GitHub credentials notice:', err);
+              } catch (credMergeErr) {
+                console.warn('Initial GitHub cloud merge notice:', credMergeErr);
               }
-            );
 
-            // Merge local items with Firestore to guarantee no offline work is lost
-            try {
-              const localItems = (await dbGetAllItems(true)).filter(i => !isSystemItem(i));
-              for (const item of localItems) {
-                await syncItemToFirestore(fbUser.uid, item).catch(() => { });
-              }
-              const remote = await fetchItemsFromFirestore(fbUser.uid);
-              if (remote && remote.length > 0) {
-                // Check if remote items include sys-github-credentials
-                const ghDoc = remote.find(i => i.id === SYS_GITHUB_CREDS_ID || i.title === '__sys_github_credentials__');
-                if (ghDoc) {
-                  const parsed = parseGitHubSyncItem(ghDoc);
-                  if (parsed && parsed.length > 0) {
-                    const local = await dbGetGitHubCredentials();
-                    const map = new Map<string, GitHubCredential>();
-                    local.forEach(c => map.set(c.id, c));
-                    parsed.forEach(c => {
-                      const existing = map.get(c.id);
-                      if (!existing || c.updatedAt > existing.updatedAt) {
-                        map.set(c.id, c);
-                      }
-                    });
-                    const merged = Array.from(map.values());
-                    await dbSetSetting('github_credentials', merged);
-                    setGithubCredentials(merged);
-                  }
-                }
-
-                // Check if remote items include sys-consistency-data
-                const consistencyDoc = remote.find(i => i.id === SYS_CONSISTENCY_VAULT_ID || i.title === '__sys_consistency_data__');
-                if (consistencyDoc) {
-                  const parsedVault = parseConsistencySyncItem(consistencyDoc);
-                  if (parsedVault) {
-                    const localVault = await dbGetConsistencyVault();
-                    if (!localVault || parsedVault.updatedAt > localVault.updatedAt) {
-                      await dbSaveConsistencyVault(parsedVault);
-                      const strk = calculateStreak(parsedVault);
-                      setConsistencyStreak(strk.currentStreak);
-                    }
-                  }
-                }
-                const regular = remote.filter(i => !isSystemItem(i));
-                await dbSaveItemsBatch(regular);
-                const all = (await dbGetAllItems(true)).filter(i => !isSystemItem(i));
-                setItems(all);
-              }
-            } catch (mergeErr) {
-              console.warn('Initial cloud merge notice:', mergeErr);
-            }
-
-            // Guaranteed push of local GitHub credentials to Firestore so Vercel gets them immediately
-            try {
-              const localCreds = await dbGetGitHubCredentials();
-              if (localCreds && localCreds.length > 0) {
-                await syncGitHubVaultToFirestore(fbUser.uid, localCreds);
-              }
-              for (const cred of localCreds) {
-                await syncGitHubCredentialToFirestore(fbUser.uid, cred).catch(() => { });
-              }
-              const remoteCreds = await fetchGitHubCredentialsFromFirestore(fbUser.uid);
-              if (remoteCreds && remoteCreds.length > 0) {
-                const map = new Map<string, GitHubCredential>();
-                localCreds.forEach(c => map.set(c.id, c));
-                remoteCreds.forEach(c => {
-                  const existing = map.get(c.id);
-                  if (!existing || c.updatedAt > existing.updatedAt) {
-                    map.set(c.id, c);
-                  }
-                });
-                const merged = Array.from(map.values());
-                await dbSetSetting('github_credentials', merged);
-                setGithubCredentials(merged);
-              }
-            } catch (credMergeErr) {
-              console.warn('Initial GitHub cloud merge notice:', credMergeErr);
-            }
-
-            // Guaranteed push of local Consistency vault to Firestore so Vercel & Mobile get it immediately
-            try {
-              const localVault = await dbGetConsistencyVault();
-              if (localVault) {
-                await syncConsistencyVaultToFirestore(fbUser.uid, localVault);
-              }
-            } catch (cPushErr) {
-              console.warn('Initial Consistency cloud push notice:', cPushErr);
-            }
-
-            // Push any pending outbox mutations
-            const mutations = await dbGetOutboxMutations();
-            if (mutations.length > 0) {
-              const applied = await pushMutationsToFirestore(fbUser.uid, mutations);
-              if (applied.length > 0) {
-                await dbRemoveOutboxMutations(applied);
-              }
-            }
-          } else {
-            // Check if we previously had cached user credentials to try auto-connecting
-            const token = await dbGetSetting<string | null>('auth_token', null);
-            const savedUserStr = await dbGetSetting<string | null>('auth_user', null);
-            if (token && savedUserStr) {
+              // Guaranteed push of local Consistency vault to Firestore so Vercel & Mobile get it immediately
               try {
-                const parsed = JSON.parse(savedUserStr);
-                setCurrentUser(parsed);
-                setAuthToken(token);
-              } catch {
-                setCloudSyncState('offline');
+                const localVault = await dbGetConsistencyVault();
+                if (localVault) {
+                  await syncConsistencyVaultToFirestore(fbUser.uid, localVault);
+                }
+              } catch (cPushErr) {
+                console.warn('Initial Consistency cloud push notice:', cPushErr);
+              }
+
+              // Push any pending outbox mutations
+              const mutations = await dbGetOutboxMutations();
+              if (mutations.length > 0) {
+                const applied = await pushMutationsToFirestore(fbUser.uid, mutations);
+                if (applied.length > 0) {
+                  await dbRemoveOutboxMutations(applied);
+                }
               }
             } else {
+              // Check if we previously had cached user credentials to try auto-connecting
+              const token = await dbGetSetting<string | null>('auth_token', null);
+              const savedUserStr = await dbGetSetting<string | null>('auth_user', null);
+              if (token && savedUserStr) {
+                try {
+                  const parsed = JSON.parse(savedUserStr);
+                  setCurrentUser(parsed);
+                  setAuthToken(token);
+                } catch {
+                  setCloudSyncState('offline');
+                }
+              } else {
+                setCloudSyncState('offline');
+              }
+            }
+          });
+        } else {
+          console.info('Firebase not configured: Running in local offline mode.');
+          const token = await dbGetSetting<string | null>('auth_token', null);
+          const savedUserStr = await dbGetSetting<string | null>('auth_user', null);
+          if (token && savedUserStr) {
+            try {
+              const parsed = JSON.parse(savedUserStr);
+              setCurrentUser(parsed);
+              setAuthToken(token);
+            } catch {
               setCloudSyncState('offline');
             }
+          } else {
+            setCloudSyncState('offline');
           }
-        });
+        }
       } catch (err) {
         console.error('Failed to initialize app storage:', err);
       }
@@ -401,6 +419,7 @@ export const App: React.FC = () => {
     window.addEventListener('resize', handleResize);
     return () => {
       window.removeEventListener('resize', handleResize);
+      if (unsubscribeAuth) unsubscribeAuth();
       if (unsubscribeFirestore) unsubscribeFirestore();
       if (unsubscribeGitHub) unsubscribeGitHub();
     };

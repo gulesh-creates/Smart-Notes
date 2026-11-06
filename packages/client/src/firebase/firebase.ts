@@ -24,26 +24,35 @@ import {
 } from 'firebase/firestore';
 import { Item, UserAccount, GitHubCredential, ConsistencyVault } from '@smartnotes/shared';
 
-// Firebase configuration from .env variables with project fallbacks
+// Firebase configuration strictly from environment variables (no hardcoded credentials!)
 export const firebaseConfig = {
-  apiKey: import.meta.env.VITE_FIREBASE_API_KEY || "AIzaSyC_V4IVWnkbN_UprtIRSlGmI2-U9smjA7w",
-  authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN || "smart-notes-2f42a.firebaseapp.com",
-  projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID || "smart-notes-2f42a",
-  storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET || "smart-notes-2f42a.firebasestorage.app",
-  messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID || "837751441535",
-  appId: import.meta.env.VITE_FIREBASE_APP_ID || "1:837751441535:web:25575c6cad49ff6180974a",
-  measurementId: import.meta.env.VITE_FIREBASE_MEASUREMENT_ID || "G-8SPT7NX537"
+  apiKey: import.meta.env.VITE_FIREBASE_API_KEY || '',
+  authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN || '',
+  projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID || '',
+  storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET || '',
+  messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID || '',
+  appId: import.meta.env.VITE_FIREBASE_APP_ID || '',
+  measurementId: import.meta.env.VITE_FIREBASE_MEASUREMENT_ID || ''
 };
 
-// Initialize Firebase App
-export const app: FirebaseApp = getApps().length === 0 ? initializeApp(firebaseConfig) : getApps()[0];
-export const auth: Auth = getAuth(app);
-export const firestore: Firestore = getFirestore(app);
+export const isFirebaseConfigured = Boolean(
+  firebaseConfig.apiKey &&
+  firebaseConfig.projectId &&
+  firebaseConfig.apiKey.trim().length > 0
+);
+
+// Initialize Firebase App only if environment variables are provided
+export const app: FirebaseApp | null = isFirebaseConfigured
+  ? (getApps().length === 0 ? initializeApp(firebaseConfig) : getApps()[0])
+  : null;
+
+export const auth: Auth | null = app ? getAuth(app) : null;
+export const firestore: Firestore | null = app ? getFirestore(app) : null;
 
 // Initialize Analytics if supported in this environment
-if (typeof window !== 'undefined') {
+if (typeof window !== 'undefined' && app) {
   isAnalyticsSupported().then(supported => {
-    if (supported) {
+    if (supported && app) {
       getAnalytics(app);
     }
   }).catch(() => {
@@ -72,6 +81,10 @@ export async function firebaseAuthenticate(
   password: string,
   displayName?: string
 ): Promise<UserAccount> {
+  if (!auth) {
+    throw new Error('Firebase is not configured. Please add the Firebase environment variables to your environment.');
+  }
+
   const email = formatAuthEmail(usernameOrEmail);
   const name = displayName || (usernameOrEmail.includes('@') ? usernameOrEmail.split('@')[0] : usernameOrEmail);
 
@@ -114,6 +127,7 @@ export async function firebaseAuthenticate(
  * Signs out from Firebase Authentication
  */
 export async function firebaseSignOut(): Promise<void> {
+  if (!auth) return;
   try {
     await signOut(auth);
   } catch (err) {
@@ -165,6 +179,7 @@ export function sanitizeItemForFirestore(item: Item, userId: string): Record<str
  * Syncs a single Item (note or folder) to Cloud Firestore under users/{userId}/items/{itemId}
  */
 export async function syncItemToFirestore(userId: string, item: Item): Promise<void> {
+  if (!firestore) return;
   try {
     const itemRef = doc(firestore, 'users', userId, 'items', item.id);
     const cleanData = sanitizeItemForFirestore(item, userId);
@@ -179,6 +194,7 @@ export async function syncItemToFirestore(userId: string, item: Item): Promise<v
  * Deletes or marks item deleted in Cloud Firestore
  */
 export async function deleteItemInFirestore(userId: string, itemId: string): Promise<void> {
+  if (!firestore) return;
   try {
     const itemRef = doc(firestore, 'users', userId, 'items', itemId);
     await setDoc(itemRef, {
@@ -198,6 +214,7 @@ export async function deleteItemInFirestore(userId: string, itemId: string): Pro
  * Fetches all user items from Cloud Firestore
  */
 export async function fetchItemsFromFirestore(userId: string): Promise<Item[]> {
+  if (!firestore) return [];
   try {
     const coll = collection(firestore, 'users', userId, 'items');
     const snap = await getDocs(coll);
@@ -218,6 +235,7 @@ export function subscribeToUserItems(
   onUpdate: (items: Item[]) => void,
   onError?: (err: any) => void
 ): () => void {
+  if (!firestore) return () => {};
   const coll = collection(firestore, 'users', userId, 'items');
   const q = query(coll);
   return onSnapshot(
@@ -334,6 +352,7 @@ export function sanitizeGitHubCredentialForFirestore(cred: GitHubCredential, use
  * Syncs a GitHub credential to Firestore under users/{userId}/github_credentials/{credId}
  */
 export async function syncGitHubCredentialToFirestore(userId: string, cred: GitHubCredential): Promise<void> {
+  if (!firestore) return;
   try {
     const credRef = doc(firestore, 'users', userId, 'github_credentials', cred.id);
     const cleanData = sanitizeGitHubCredentialForFirestore(cred, userId);
@@ -348,6 +367,7 @@ export async function syncGitHubCredentialToFirestore(userId: string, cred: GitH
  * Deletes a GitHub credential in Firestore
  */
 export async function deleteGitHubCredentialInFirestore(userId: string, credId: string): Promise<void> {
+  if (!firestore) return;
   try {
     const credRef = doc(firestore, 'users', userId, 'github_credentials', credId);
     await deleteDoc(credRef);
@@ -361,6 +381,7 @@ export async function deleteGitHubCredentialInFirestore(userId: string, credId: 
  * Fetches all user GitHub credentials from Cloud Firestore
  */
 export async function fetchGitHubCredentialsFromFirestore(userId: string): Promise<GitHubCredential[]> {
+  if (!firestore) return [];
   try {
     const coll = collection(firestore, 'users', userId, 'github_credentials');
     const snap = await getDocs(coll);
@@ -426,6 +447,7 @@ export function subscribeToGitHubCredentials(
   onUpdate: (creds: GitHubCredential[]) => void,
   onError?: (err: any) => void
 ): () => void {
+  if (!firestore) return () => {};
   const coll = collection(firestore, 'users', userId, 'github_credentials');
   const q = query(coll);
   return onSnapshot(
