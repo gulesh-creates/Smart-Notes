@@ -783,3 +783,4 @@ export const ConsistencyCalendarView: React.FC<ConsistencyCalendarViewProps> = (
     </div>
   );
 };
+
