@@ -1,11 +1,12 @@
 import React, { useState } from 'react';
-import { ConsistencyVault } from '@smartnotes/shared';
+import { ConsistencyVault, ConsistencyDailyRecord } from '@smartnotes/shared';
 import {
   getScheduledActivitiesForDate,
   calculateDailyMetrics,
   calculateStreak,
   getLocalDateKey,
   dbToggleActivityCompletion,
+  dbSaveConsistencyVault,
   dbSetMinimumDayMode,
   dbRecordManualTime,
   ScheduledActivityView
@@ -110,9 +111,53 @@ export const TodayDashboard: React.FC<TodayDashboardProps> = ({
     });
   }
 
-  const handleToggleCheck = async (activityId: string, currentStatus: boolean) => {
-    const updated = await dbToggleActivityCompletion(activityId, selectedDateKey, !currentStatus);
-    onVaultUpdated(updated);
+  const handleToggleCheck = (activityId: string, currentStatus: boolean) => {
+    const nextStatus = !currentStatus;
+    const now = Date.now();
+    const recId = `${activityId}_${selectedDateKey}`;
+
+    // 1. Instantly construct optimistic vault (0ms latency!)
+    const existingRec = vault.dailyRecords.find(r => r.id === recId);
+    let updatedRecords: ConsistencyDailyRecord[];
+    if (existingRec) {
+      updatedRecords = vault.dailyRecords.map(r =>
+        r.id === recId
+          ? {
+              ...r,
+              isCompleted: nextStatus,
+              completedAt: nextStatus ? now : undefined,
+              updatedAt: now
+            }
+          : r
+      );
+    } else {
+      updatedRecords = [
+        ...vault.dailyRecords,
+        {
+          id: recId,
+          activityId,
+          dateKey: selectedDateKey,
+          isCompleted: nextStatus,
+          completedAt: nextStatus ? now : undefined,
+          actualMinutes: 0,
+          updatedAt: now
+        }
+      ];
+    }
+
+    const optimisticVault: ConsistencyVault = {
+      ...vault,
+      dailyRecords: updatedRecords,
+      updatedAt: now
+    };
+
+    // 2. Synchronous UI update - box ticks immediately!
+    onVaultUpdated(optimisticVault);
+
+    // 3. Persist to storage in background
+    dbSaveConsistencyVault(optimisticVault).catch(err => {
+      console.warn('Failed to save optimistic vault:', err);
+    });
   };
 
   const handleToggleMinimumDay = async () => {
@@ -511,7 +556,18 @@ export const TodayDashboard: React.FC<TodayDashboardProps> = ({
                       }}
                     >
                       {/* Left: Checkbox + Title + Target */}
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flex: 1, minWidth: '220px' }}>
+                      <div
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '12px',
+                          flex: 1,
+                          minWidth: '220px',
+                          cursor: 'pointer',
+                          userSelect: 'none'
+                        }}
+                        onClick={() => handleToggleCheck(act.id, isDone)}
+                      >
                         {/* Independent Checkbox (Part 5 & 9: Time target does NOT force task completion) */}
                         <button
                           type="button"
@@ -527,9 +583,13 @@ export const TodayDashboard: React.FC<TodayDashboardProps> = ({
                             alignItems: 'center',
                             justifyContent: 'center',
                             padding: 0,
-                            cursor: 'pointer'
+                            cursor: 'pointer',
+                            flexShrink: 0
                           }}
-                          onClick={() => handleToggleCheck(act.id, isDone)}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleToggleCheck(act.id, isDone);
+                          }}
                           title={isDone ? 'Mark Incomplete' : 'Mark Task Complete'}
                         >
                           {isDone && <span style={{ fontWeight: 800, fontSize: '0.85rem' }}>✓</span>}

@@ -135,6 +135,22 @@ export const App: React.FC = () => {
   const [authToken, setAuthToken] = useState<string | null>(null);
 
   const saveTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const consistencySyncTimerRef = useRef<any>(null);
+
+  const handleSyncConsistencyVault = useCallback((updatedVault: ConsistencyVault) => {
+    const strk = calculateStreak(updatedVault);
+    setConsistencyStreak(strk.currentStreak);
+    if (!currentUser?.id) return;
+
+    if (consistencySyncTimerRef.current) {
+      clearTimeout(consistencySyncTimerRef.current);
+    }
+    consistencySyncTimerRef.current = setTimeout(() => {
+      syncConsistencyVaultToFirestore(currentUser.id, updatedVault).catch(err => {
+        console.warn('Failed to sync Consistency vault:', err);
+      });
+    }, 1200);
+  }, [currentUser]);
 
   // Toast Helper
   const showToast = (msg: string) => {
@@ -1060,15 +1076,7 @@ export const App: React.FC = () => {
           onSaveGitHubCredential={handleSaveGitHubCredential}
           onDeleteGitHubCredential={handleDeleteGitHubCredential}
           onDeleteItem={handleRequestDelete}
-          onSyncConsistencyVault={(updatedVault) => {
-            const strk = calculateStreak(updatedVault);
-            setConsistencyStreak(strk.currentStreak);
-            if (currentUser?.id) {
-              syncConsistencyVaultToFirestore(currentUser.id, updatedVault).catch(err => {
-                console.warn('Failed to sync Consistency vault:', err);
-              });
-            }
-          }}
+          onSyncConsistencyVault={handleSyncConsistencyVault}
         />
       ) : (
         /* RENDER MODE B: RESPONSIVE DESKTOP 3-PANE LAYOUT */
@@ -1223,15 +1231,7 @@ export const App: React.FC = () => {
             {specialFilter === 'consistency' ? (
               <main style={{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column', background: 'var(--bg-canvas)' }}>
                 <ConsistencyWorkspace
-                  onSyncVault={(updatedVault) => {
-                    const strk = calculateStreak(updatedVault);
-                    setConsistencyStreak(strk.currentStreak);
-                    if (currentUser?.id) {
-                      syncConsistencyVaultToFirestore(currentUser.id, updatedVault).catch(err => {
-                        console.warn('Failed to sync Consistency vault:', err);
-                      });
-                    }
-                  }}
+                  onSyncVault={handleSyncConsistencyVault}
                 />
               </main>
             ) : specialFilter === 'github' ? (

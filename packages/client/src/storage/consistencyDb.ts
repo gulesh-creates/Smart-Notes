@@ -425,21 +425,19 @@ export function calculateStreak(
   vault: ConsistencyVault,
   referenceDateKey: string = getLocalDateKey()
 ): StreakMetrics {
-  // Collect all unique dates with activity or check past 60 days
   const refDate = parseLocalDateKey(referenceDateKey);
   const history: Record<string, DailyConsistencyMetrics> = {};
 
-  // Gather past 60 days of metrics
-  for (let i = 0; i <= 60; i++) {
-    const d = new Date(refDate);
-    d.setDate(d.getDate() - i);
-    const dk = getLocalDateKey(d);
-    history[dk] = calculateDailyMetrics(vault, dk);
-  }
+  const getMetrics = (dk: string): DailyConsistencyMetrics => {
+    if (!history[dk]) {
+      history[dk] = calculateDailyMetrics(vault, dk);
+    }
+    return history[dk];
+  };
 
   // Calculate current streak backward from yesterday, plus today if today already qualifies
   let currentStreak = 0;
-  const todayMetrics = history[referenceDateKey];
+  const todayMetrics = getMetrics(referenceDateKey);
   if (todayMetrics && !todayMetrics.isRestDay && todayMetrics.isQualifyingDay) {
     currentStreak += 1;
   }
@@ -450,8 +448,7 @@ export function calculateStreak(
 
   while (true) {
     const dk = getLocalDateKey(checkDate);
-    const m = history[dk] || calculateDailyMetrics(vault, dk);
-    history[dk] = m;
+    const m = getMetrics(dk);
 
     if (m.isRestDay) {
       // Intentional rest day does not break streak, but also doesn't artificially inflate it
@@ -470,13 +467,18 @@ export function calculateStreak(
     if (currentStreak > 365) break;
   }
 
-  // Calculate longest streak in history
+  // Calculate longest streak in history using dates that actually exist in vault
+  const datesSet = new Set<string>();
+  (vault.dailyRecords || []).forEach(r => datesSet.add(r.dateKey));
+  (vault.focusSessions || []).forEach(s => datesSet.add(s.dateKey));
+  datesSet.add(referenceDateKey);
+
   let longestStreak = currentStreak;
   let tempStreak = 0;
-  const sortedDateKeys = Object.keys(history).sort(); // chronological
+  const sortedDateKeys = Array.from(datesSet).sort(); // chronological
 
   for (const dk of sortedDateKeys) {
-    const m = history[dk];
+    const m = getMetrics(dk);
     if (m.isRestDay) continue;
     if (m.isQualifyingDay) {
       tempStreak += 1;
@@ -499,7 +501,7 @@ export function calculateStreak(
     const day = new Date(monday);
     day.setDate(day.getDate() + i);
     const dk = getLocalDateKey(day);
-    const m = history[dk] || calculateDailyMetrics(vault, dk);
+    const m = getMetrics(dk);
     if (!m.isRestDay && m.isQualifyingDay) {
       qualifyingDatesThisWeek += 1;
     }
@@ -514,7 +516,7 @@ export function calculateStreak(
   for (let d = 1; d <= daysInMonth; d++) {
     const dateObj = new Date(year, month, d);
     const dk = getLocalDateKey(dateObj);
-    const m = history[dk] || calculateDailyMetrics(vault, dk);
+    const m = getMetrics(dk);
     if (!m.isRestDay && m.isQualifyingDay) {
       qualifyingDatesThisMonth += 1;
     }
