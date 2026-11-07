@@ -69,9 +69,13 @@ export const InsightsView: React.FC<InsightsViewProps> = ({ vault, onVaultUpdate
     });
   }
 
-  const weeklyTotalMinutes = past7Days.reduce((sum, d) => sum + d.metrics.actualMinutes, 0);
+  const rawWeeklyMinutes = past7Days.reduce((sum, d) => sum + d.metrics.actualMinutes, 0);
+  const weeklyTotalMinutes = Math.round(rawWeeklyMinutes * 10) / 10;
   const weeklyQualifyingDays = past7Days.filter(d => !d.metrics.isRestDay && d.metrics.isQualifyingDay).length;
   const maxDayMinutes = Math.max(60, ...past7Days.map(d => d.metrics.actualMinutes));
+
+  const todayMetrics = calculateDailyMetrics(vault, todayKey);
+  const todayTotalMinutes = Math.round(todayMetrics.actualMinutes * 10) / 10;
 
   // --- Monthly Heatmap Calculations (Past 35 Days / 5 Weeks) ---
   const heatmapDays: { dateKey: string; dayNum: number; minutes: number; score: number }[] = [];
@@ -88,7 +92,8 @@ export const InsightsView: React.FC<InsightsViewProps> = ({ vault, onVaultUpdate
     });
   }
 
-  const monthlyTotalMinutes = heatmapDays.reduce((sum, d) => sum + d.minutes, 0);
+  const rawMonthlyMinutes = heatmapDays.reduce((sum, d) => sum + d.minutes, 0);
+  const monthlyTotalMinutes = Math.round(rawMonthlyMinutes * 10) / 10;
   const monthlyAvgDailyMinutes = Math.round(monthlyTotalMinutes / 35);
 
   // Category breakdown for past 7 days
@@ -102,7 +107,8 @@ export const InsightsView: React.FC<InsightsViewProps> = ({ vault, onVaultUpdate
     if (past7Days.some(d => d.dateKey === rec.dateKey)) {
       const act = vault.activities.find(a => a.id === rec.activityId);
       if (act && categoryMinutesMap.has(act.categoryId)) {
-        categoryMinutesMap.get(act.categoryId)!.minutes += rec.actualMinutes;
+        const current = categoryMinutesMap.get(act.categoryId)!;
+        current.minutes = Math.round((current.minutes + rec.actualMinutes) * 10) / 10;
       }
     }
   }
@@ -216,15 +222,22 @@ export const InsightsView: React.FC<InsightsViewProps> = ({ vault, onVaultUpdate
           }}
         >
           <span style={{ fontSize: '0.75rem', fontWeight: 700, textTransform: 'uppercase', color: 'var(--text-tertiary)' }}>
-            {activeTab === 'monthly' ? 'Past 35 Days Work' : 'Past 7 Days Work'}
+            {activeTab === 'monthly' ? 'Past 35 Days Work' : activeTab === 'daily' ? 'Today Focus Work' : 'Past 7 Days Work'}
           </span>
-          <span style={{ fontSize: '1.8rem', fontWeight: 800, color: 'var(--lime-primary)', fontFamily: 'var(--font-mono)' }}>
-            {activeTab === 'monthly' ? monthlyTotalMinutes : weeklyTotalMinutes} min
-          </span>
+          <div style={{ display: 'flex', alignItems: 'baseline', gap: '6px', flexWrap: 'nowrap' }}>
+            <span style={{ fontSize: '1.8rem', fontWeight: 800, color: 'var(--lime-primary)', fontFamily: 'var(--font-mono)', lineHeight: 1.1 }}>
+              {activeTab === 'monthly' ? monthlyTotalMinutes : activeTab === 'daily' ? todayTotalMinutes : weeklyTotalMinutes}
+            </span>
+            <span style={{ fontSize: '0.95rem', fontWeight: 700, color: 'var(--text-secondary)' }}>
+              min
+            </span>
+          </div>
           <span style={{ fontSize: '0.78rem', color: 'var(--text-secondary)' }}>
             {activeTab === 'monthly'
-              ? `${Math.round(monthlyTotalMinutes / 60)} productive hours`
-              : `${Math.round(weeklyTotalMinutes / 60)} hours total focused`}
+              ? `${Math.round(monthlyTotalMinutes / 60 * 10) / 10} productive hours`
+              : activeTab === 'daily'
+              ? `${Math.round(todayTotalMinutes / 60 * 10) / 10} hours focused today`
+              : `${Math.round(weeklyTotalMinutes / 60 * 10) / 10} hours total focused`}
           </span>
         </div>
 
@@ -242,11 +255,11 @@ export const InsightsView: React.FC<InsightsViewProps> = ({ vault, onVaultUpdate
           <span style={{ fontSize: '0.75rem', fontWeight: 700, textTransform: 'uppercase', color: 'var(--text-tertiary)' }}>
             Consistency Ratio
           </span>
-          <span style={{ fontSize: '1.8rem', fontWeight: 800, color: 'var(--text-main)', fontFamily: 'var(--font-mono)' }}>
+          <span style={{ fontSize: '1.8rem', fontWeight: 800, color: 'var(--text-main)', fontFamily: 'var(--font-mono)', lineHeight: 1.1 }}>
             {weeklyQualifyingDays} / 7
           </span>
           <span style={{ fontSize: '0.78rem', color: 'var(--text-secondary)' }}>
-            Days with ≥70% consistency
+            Qualifying days this week
           </span>
         </div>
       </div>
@@ -311,7 +324,7 @@ export const InsightsView: React.FC<InsightsViewProps> = ({ vault, onVaultUpdate
                         color: isQualifying ? 'var(--lime-primary)' : 'var(--text-tertiary)'
                       }}
                     >
-                      {day.metrics.actualMinutes}m
+                      {Math.round(day.metrics.actualMinutes * 10) / 10}m
                     </span>
 
                     <div
