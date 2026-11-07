@@ -3,6 +3,12 @@ import { ConsistencyVault, ConsistencyActivity } from '@smartnotes/shared';
 import { focusTimerEngine, FocusTimerSnapshot, STAGE_CONFIG } from './FocusTimerEngine';
 import { getScheduledActivitiesForDate, getLocalDateKey } from '../../storage/consistencyDb';
 import { IconPlay, IconPause, IconCheckCircle, IconSkip, IconTarget, IconFlame } from '../icons/Icons';
+import {
+  AVAILABLE_TIMER_TONES,
+  getSavedTimerTone,
+  saveTimerTone,
+  playTimerTone
+} from './timerAudio';
 
 export interface FocusTimerViewProps {
   vault: ConsistencyVault;
@@ -19,6 +25,7 @@ export const FocusTimerView: React.FC<FocusTimerViewProps> = ({
   const [chosenActivityId, setChosenActivityId] = useState<string>(
     selectedActivityId || snapshot.activityId || (vault.activities[0]?.id ?? '')
   );
+  const [currentTone, setCurrentTone] = useState<string>(() => getSavedTimerTone());
 
   useEffect(() => {
     return focusTimerEngine.subscribe(setSnapshot);
@@ -29,6 +36,15 @@ export const FocusTimerView: React.FC<FocusTimerViewProps> = ({
       setChosenActivityId(selectedActivityId);
     }
   }, [selectedActivityId]);
+
+  const handleToneChange = (toneId: string) => {
+    setCurrentTone(toneId);
+    saveTimerTone(toneId);
+  };
+
+  const handleTestSound = () => {
+    playTimerTone(currentTone);
+  };
 
   const todayKey = getLocalDateKey();
   const scheduled = getScheduledActivitiesForDate(vault, todayKey);
@@ -351,38 +367,43 @@ export const FocusTimerView: React.FC<FocusTimerViewProps> = ({
           </p>
 
           <div style={{ display: 'flex', gap: '12px', justifyContent: 'center', flexWrap: 'wrap' }}>
-            {snapshot.stage === 3 ? (
-              <button
-                type="button"
-                className="btn btn-primary"
-                style={{
-                  background: 'var(--lime-primary)',
-                  color: 'var(--text-on-lime)',
-                  fontWeight: 800,
-                  padding: '12px 24px',
-                  borderRadius: 'var(--radius-pill)'
-                }}
-                onClick={() => focusTimerEngine.startBreak()}
-              >
-                ☕ Take 5-Minute Break
-              </button>
-            ) : (
-              <button
-                type="button"
-                className="btn btn-primary"
-                style={{
-                  background: 'var(--lime-primary)',
-                  color: 'var(--text-on-lime)',
-                  fontWeight: 800,
-                  padding: '12px 24px',
-                  borderRadius: 'var(--radius-pill)',
-                  boxShadow: '0 4px 14px var(--lime-glow)'
-                }}
-                onClick={() => focusTimerEngine.continueCheckpoint()}
-              >
-                Continue +10 Minutes 🔥
-              </button>
-            )}
+            <button
+              type="button"
+              className="btn btn-primary"
+              style={{
+                background: 'var(--lime-primary)',
+                color: 'var(--text-on-lime)',
+                fontWeight: 800,
+                padding: '12px 24px',
+                borderRadius: 'var(--radius-pill)',
+                boxShadow: '0 4px 14px var(--lime-glow)'
+              }}
+              onClick={() => {
+                if (snapshot.stage === 3) {
+                  focusTimerEngine.extendSession(10);
+                } else {
+                  focusTimerEngine.continueCheckpoint();
+                }
+              }}
+            >
+              Continue +10 Minutes 🔥
+            </button>
+
+            <button
+              type="button"
+              className="btn"
+              style={{
+                background: 'var(--bg-surface-elevated)',
+                color: 'var(--text-main)',
+                fontWeight: 700,
+                padding: '12px 20px',
+                borderRadius: 'var(--radius-pill)',
+                border: '1px solid var(--border-medium)'
+              }}
+              onClick={() => focusTimerEngine.startBreak()}
+            >
+              ☕ Take 5-Minute Break
+            </button>
 
             <button
               type="button"
@@ -508,6 +529,71 @@ export const FocusTimerView: React.FC<FocusTimerViewProps> = ({
           )}
         </div>
       )}
+
+      {/* Audio Completion Tone Settings Bar */}
+      <div
+        style={{
+          width: '100%',
+          maxWidth: '520px',
+          marginTop: '32px',
+          padding: '16px 20px',
+          background: 'var(--bg-surface)',
+          border: '1px solid var(--border-subtle)',
+          borderRadius: '16px',
+          display: 'flex',
+          flexDirection: 'column',
+          gap: '12px'
+        }}
+      >
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <div>
+            <span style={{ fontSize: '0.84rem', fontWeight: 800, color: 'var(--text-main)' }}>
+              🔔 Timer Completion Sound
+            </span>
+            <p style={{ fontSize: '0.74rem', color: 'var(--text-secondary)', margin: '2px 0 0 0' }}>
+              Synthesized tone played when focus intervals or breaks complete.
+            </p>
+          </div>
+          <button
+            type="button"
+            className="btn btn-ghost"
+            onClick={handleTestSound}
+            style={{ fontSize: '0.78rem', padding: '5px 12px', border: '1px solid var(--border-subtle)' }}
+          >
+            ▶ Test Sound
+          </button>
+        </div>
+
+        <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+          {AVAILABLE_TIMER_TONES.map(tone => {
+            const isSelected = tone.id === currentTone;
+            return (
+              <button
+                key={tone.id}
+                type="button"
+                onClick={() => {
+                  handleToneChange(tone.id);
+                  playTimerTone(tone.id);
+                }}
+                style={{
+                  padding: '6px 12px',
+                  borderRadius: '999px',
+                  border: isSelected ? '1.5px solid var(--lime-primary)' : '1px solid var(--border-subtle)',
+                  background: isSelected ? 'rgba(218, 253, 75, 0.15)' : 'transparent',
+                  color: isSelected ? 'var(--text-main)' : 'var(--text-secondary)',
+                  fontSize: '0.78rem',
+                  fontWeight: isSelected ? 800 : 600,
+                  cursor: 'pointer',
+                  transition: 'all 0.15s ease'
+                }}
+                title={tone.description}
+              >
+                {isSelected ? '✓ ' : ''}{tone.name}
+              </button>
+            );
+          })}
+        </div>
+      </div>
     </div>
   );
 };

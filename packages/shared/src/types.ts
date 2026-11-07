@@ -237,6 +237,22 @@ export interface ConsistencyReflection {
   updatedAt: number;
 }
 
+export interface ConsistencyCalendarEvent {
+  id: string;
+  dateKey: string; // Local YYYY-MM-DD
+  title: string;
+  notes?: string;
+  tag?: string; // 'Milestone' | 'Exam' | 'Goal' | 'Reminder' | 'General'
+  color?: string;
+  createdAt: number;
+  updatedAt: number;
+}
+
+export interface ConsistencyVaultSettings {
+  qualifyingThreshold?: number; // e.g. 40
+  timerSound?: string; // 'bell' | 'gong' | 'beep' | 'arpeggio' | 'marimba'
+}
+
 export interface ConsistencyVault {
   categories: ConsistencyCategory[];
   activities: ConsistencyActivity[];
@@ -244,6 +260,8 @@ export interface ConsistencyVault {
   focusSessions: ConsistencyFocusSession[];
   overrides: ConsistencyDailyOverride[];
   reflections: ConsistencyReflection[];
+  calendarEvents?: ConsistencyCalendarEvent[];
+  settings?: ConsistencyVaultSettings;
   updatedAt: number;
 }
 

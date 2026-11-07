@@ -6,6 +6,7 @@ import {
   getScheduledActivitiesForDate,
   calculateDailyMetrics,
   calculateStreak,
+  reconcileConsistencyVaults,
   getLocalDateKey
 } from './storage/consistencyDb';
 import { ConsistencyVault, ConsistencyActivity } from '@smartnotes/shared';
@@ -337,6 +338,109 @@ describe('Consistency Tracker — Streak System', () => {
     // Days 3, 4, 5 all qualified -> current streak is at least 3 days!
     assert.ok(streak.currentStreak >= 3, `Expected currentStreak >= 3, got ${streak.currentStreak}`);
     assert.ok(streak.longestStreak >= 3, `Expected longestStreak >= 3, got ${streak.longestStreak}`);
+  });
+
+  it('correctly calculates 2-day streak for Nov 6 and Nov 7 user sessions with realistic qualification rules', () => {
+    // Exact user configuration from screenshots: 15 activities with 150m target
+    const activities: ConsistencyActivity[] = Array.from({ length: 15 }, (_, i) => ({
+      id: `act-${i + 1}`,
+      categoryId: 'cat-academics',
+      title: `Task ${i + 1}`,
+      minMinutes: 10,
+      recurrence: { type: 'daily' },
+      orderIndex: i,
+      createdAt: 0,
+      updatedAt: 0
+    }));
+
+    const userVault: ConsistencyVault = {
+      categories: [{ id: 'cat-academics', name: 'Academics', orderIndex: 0, createdAt: 0, updatedAt: 0 }],
+      activities,
+      dailyRecords: [
+        // Nov 6: 5 completed, 62.7m focused
+        ...Array.from({ length: 5 }, (_, i) => ({
+          id: `act-${i + 1}_2026-11-06`,
+          activityId: `act-${i + 1}`,
+          dateKey: '2026-11-06',
+          isCompleted: true,
+          actualMinutes: i === 0 ? 30 : 8,
+          updatedAt: 0
+        })),
+        // Nov 7: 4 completed, 171.9m focused
+        ...Array.from({ length: 4 }, (_, i) => ({
+          id: `act-${i + 1}_2026-11-07`,
+          activityId: `act-${i + 1}`,
+          dateKey: '2026-11-07',
+          isCompleted: true,
+          actualMinutes: i === 0 ? 60 : 37.3,
+          updatedAt: 0
+        }))
+      ],
+      focusSessions: [],
+      overrides: [],
+      reflections: [],
+      settings: { qualifyingThreshold: 40 },
+      updatedAt: Date.now()
+    };
+
+    // Nov 6 metrics
+    const mNov6 = calculateDailyMetrics(userVault, '2026-11-06');
+    assert.ok(mNov6.isQualifyingDay, 'Nov 6 should qualify with 5 completed tasks and 62.7m focus time');
+
+    // Nov 7 metrics
+    const mNov7 = calculateDailyMetrics(userVault, '2026-11-07');
+    assert.ok(mNov7.isQualifyingDay, 'Nov 7 should qualify with 171.9m focus (> 150m target) and 4 completed tasks');
+
+    // Current streak on Nov 7 should be 2 consecutive days
+    const streak = calculateStreak(userVault, '2026-11-07');
+    assert.equal(streak.currentStreak, 2, 'Current streak on Nov 7 must be 2 days');
+  });
+
+  it('reconciles multi-device vaults preserving all activities, sessions, and task completions', () => {
+    const localVault: ConsistencyVault = {
+      categories: [{ id: 'cat-1', name: 'Academics', orderIndex: 0, createdAt: 0, updatedAt: 100 }],
+      activities: [
+        { id: 'act-1', categoryId: 'cat-1', title: 'C++', minMinutes: 20, recurrence: { type: 'daily' }, orderIndex: 0, createdAt: 0, updatedAt: 100 },
+        { id: 'act-2', categoryId: 'cat-1', title: 'Math', minMinutes: 20, recurrence: { type: 'daily' }, orderIndex: 1, createdAt: 0, updatedAt: 100 }
+      ],
+      dailyRecords: [
+        { id: 'act-1_2026-11-07', activityId: 'act-1', dateKey: '2026-11-07', isCompleted: true, actualMinutes: 25, updatedAt: 150 }
+      ],
+      focusSessions: [
+        { id: 'foc-1', activityId: 'act-1', dateKey: '2026-11-07', startTimestamp: 100, endTimestamp: 200, focusedSeconds: 1500, breakSeconds: 0, stagesCompleted: 1, source: 'timer', createdAt: 200 }
+      ],
+      overrides: [],
+      reflections: [],
+      updatedAt: 150
+    };
+
+    const remoteVault: ConsistencyVault = {
+      categories: [{ id: 'cat-1', name: 'Academics', orderIndex: 0, createdAt: 0, updatedAt: 90 }],
+      activities: [
+        { id: 'act-1', categoryId: 'cat-1', title: 'C++', minMinutes: 20, recurrence: { type: 'daily' }, orderIndex: 0, createdAt: 0, updatedAt: 90 },
+        { id: 'act-3', categoryId: 'cat-1', title: 'Chem', minMinutes: 5, recurrence: { type: 'daily' }, orderIndex: 2, createdAt: 0, updatedAt: 90 }
+      ],
+      dailyRecords: [
+        { id: 'act-3_2026-11-07', activityId: 'act-3', dateKey: '2026-11-07', isCompleted: false, actualMinutes: 5, updatedAt: 120 }
+      ],
+      focusSessions: [
+        { id: 'foc-2', activityId: 'act-3', dateKey: '2026-11-07', startTimestamp: 50, endTimestamp: 100, focusedSeconds: 300, breakSeconds: 0, stagesCompleted: 0, source: 'timer', createdAt: 100 }
+      ],
+      overrides: [],
+      reflections: [],
+      updatedAt: 120
+    };
+
+    const reconciled = reconcileConsistencyVaults(localVault, remoteVault);
+    // Preserves union of activities: act-1, act-2, act-3
+    assert.equal(reconciled.activities.length, 3);
+    // Preserves union of focus sessions: foc-1, foc-2
+    assert.equal(reconciled.focusSessions.length, 2);
+    // Preserves daily records: act-1 checked (true), act-3 (5 mins)
+    assert.equal(reconciled.dailyRecords.length, 2);
+    const rec1 = reconciled.dailyRecords.find(r => r.activityId === 'act-1');
+    assert.equal(rec1?.isCompleted, true);
+    assert.equal(rec1?.actualMinutes, 25);
   });
 });
 

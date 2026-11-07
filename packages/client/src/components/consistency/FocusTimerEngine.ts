@@ -1,4 +1,6 @@
+import { ConsistencyVault } from '@smartnotes/shared';
 import { dbRecordFocusSession, getLocalDateKey } from '../../storage/consistencyDb';
+import { playTimerTone } from './timerAudio';
 
 export type FocusTimerStage = 1 | 2 | 3 | 'break';
 
@@ -67,33 +69,11 @@ const removeStorageItem = (key: string): void => {
   } catch (e) {}
 };
 
-// Play gentle Web Audio completion chime
+// Play synthesized timer completion tone
 export function playChimeSound() {
   try {
-    if (typeof window === 'undefined') return;
-    const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
-    if (!AudioCtx) return;
-    const ctx = new AudioCtx();
-    const now = ctx.currentTime;
-
-    const playTone = (freq: number, start: number, duration: number) => {
-      const osc = ctx.createOscillator();
-      const gain = ctx.createGain();
-      osc.type = 'sine';
-      osc.frequency.setValueAtTime(freq, start);
-      gain.gain.setValueAtTime(0.001, start);
-      gain.gain.exponentialRampToValueAtTime(0.3, start + 0.05);
-      gain.gain.exponentialRampToValueAtTime(0.001, start + duration);
-      osc.connect(gain);
-      gain.connect(ctx.destination);
-      osc.start(start);
-      osc.stop(start + duration);
-    };
-
-    playTone(587.33, now, 0.4);       // D5
-    playTone(880.00, now + 0.25, 0.6); // A5
+    playTimerTone();
   } catch (err) {
-    // Non-fatal if audio context is blocked
     console.warn('Audio chime notice:', err);
   }
 }
@@ -116,6 +96,7 @@ class FocusTimerEngine {
   private current: FocusTimerSnapshot = this.getInitialSnapshot();
   private intervalId: number | null = null;
   private listeners: Set<(snapshot: FocusTimerSnapshot) => void> = new Set();
+  private sessionSavedListeners: Set<(vault: ConsistencyVault) => void> = new Set();
 
   constructor() {
     this.restoreSession();
@@ -153,6 +134,23 @@ class FocusTimerEngine {
     return () => {
       this.listeners.delete(listener);
     };
+  }
+
+  public subscribeSessionSaved(listener: (vault: ConsistencyVault) => void): () => void {
+    this.sessionSavedListeners.add(listener);
+    return () => {
+      this.sessionSavedListeners.delete(listener);
+    };
+  }
+
+  private notifySessionSaved(vault: ConsistencyVault) {
+    this.sessionSavedListeners.forEach(fn => {
+      try {
+        fn(vault);
+      } catch (e) {
+        console.warn('Focus timer session saved listener error:', e);
+      }
+    });
   }
 
   private notify() {
@@ -528,7 +526,7 @@ class FocusTimerEngine {
     // Persist to database if in browser/environment with indexedDB and at least 15 seconds worked
     if (typeof indexedDB !== 'undefined' && activityId && totalFocusedSeconds >= 15) {
       try {
-        await dbRecordFocusSession({
+        const updatedVault = await dbRecordFocusSession({
           activityId,
           dateKey,
           startTimestamp: this.current.stageStartTimestamp || now,
@@ -538,6 +536,7 @@ class FocusTimerEngine {
           stagesCompleted,
           source: 'timer'
         });
+        this.notifySessionSaved(updatedVault);
       } catch (err) {
         console.warn('Failed to record focus session:', err);
       }
@@ -548,6 +547,16 @@ class FocusTimerEngine {
     this.notify();
 
     return totalFocusedSeconds;
+  }
+
+  public extendSession(additionalMinutes: number = 10) {
+    if (!this.current.activityId) return;
+    const additionalSec = additionalMinutes * 60;
+    this.current.stageDurationSeconds += additionalSec;
+    this.current.stageRemainingSeconds += additionalSec;
+    this.current.status = 'FOCUS_RUNNING';
+    this.startHeartbeat();
+    this.notify();
   }
 
   public cancelSession() {

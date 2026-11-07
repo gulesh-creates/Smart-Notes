@@ -4,10 +4,13 @@ import { dbGetConsistencyVault, dbSaveConsistencyVault } from '../../storage/con
 import { TodayDashboard } from './TodayDashboard';
 import { PriorityManager } from './PriorityManager';
 import { FocusTimerView } from './FocusTimerView';
+import { BreakTimerSuite } from './BreakTimerSuite';
+import { ConsistencyCalendarView } from './ConsistencyCalendarView';
 import { InsightsView } from './InsightsView';
-import { IconTarget, IconFlame, IconBarChart, IconClock } from '../icons/Icons';
+import { focusTimerEngine } from './FocusTimerEngine';
+import { IconTarget, IconFlame, IconBarChart, IconClock, IconCalendar } from '../icons/Icons';
 
-export type ConsistencyTab = 'today' | 'priorities' | 'focus' | 'insights';
+export type ConsistencyTab = 'today' | 'priorities' | 'focus' | 'break' | 'calendar' | 'insights';
 
 export interface ConsistencyWorkspaceProps {
   onSyncVault?: (vault: ConsistencyVault) => void;
@@ -23,9 +26,10 @@ export const ConsistencyWorkspace: React.FC<ConsistencyWorkspaceProps> = ({
   const [activeTab, setActiveTab] = useState<ConsistencyTab>(initialTab);
   const [vault, setVault] = useState<ConsistencyVault | null>(null);
   const [selectedActivityId, setSelectedActivityId] = useState<string | null>(initialActivityId);
+  const [selectedDateKey, setSelectedDateKey] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
-  // Load vault from IndexedDB
+  // Load vault from IndexedDB and subscribe to focus timer session saved events
   useEffect(() => {
     let mounted = true;
     dbGetConsistencyVault().then(v => {
@@ -34,8 +38,16 @@ export const ConsistencyWorkspace: React.FC<ConsistencyWorkspaceProps> = ({
         setLoading(false);
       }
     });
+
+    const unsubscribeTimer = focusTimerEngine.subscribeSessionSaved(updatedVault => {
+      if (mounted) {
+        handleVaultUpdated(updatedVault);
+      }
+    });
+
     return () => {
       mounted = false;
+      unsubscribeTimer();
     };
   }, []);
 
@@ -49,6 +61,11 @@ export const ConsistencyWorkspace: React.FC<ConsistencyWorkspaceProps> = ({
   const handleStartFocus = (activityId: string) => {
     setSelectedActivityId(activityId);
     setActiveTab('focus');
+  };
+
+  const handleJumpToDate = (dateKey: string) => {
+    setSelectedDateKey(dateKey);
+    setActiveTab('today');
   };
 
   if (loading || !vault) {
@@ -120,6 +137,8 @@ export const ConsistencyWorkspace: React.FC<ConsistencyWorkspaceProps> = ({
               { id: 'today', label: 'Today', icon: IconClock },
               { id: 'priorities', label: 'Priorities', icon: IconTarget },
               { id: 'focus', label: 'Focus Timer', icon: IconFlame },
+              { id: 'break', label: 'Break Timer', icon: IconClock },
+              { id: 'calendar', label: 'Calendar', icon: IconCalendar },
               { id: 'insights', label: 'Insights', icon: IconBarChart }
             ].map(tab => {
               const isActive = activeTab === tab.id;
@@ -161,6 +180,7 @@ export const ConsistencyWorkspace: React.FC<ConsistencyWorkspaceProps> = ({
             vault={vault}
             onVaultUpdated={handleVaultUpdated}
             onStartFocus={handleStartFocus}
+            initialDateKey={selectedDateKey || undefined}
           />
         )}
         {activeTab === 'priorities' && (
@@ -178,6 +198,16 @@ export const ConsistencyWorkspace: React.FC<ConsistencyWorkspaceProps> = ({
               // Refresh vault after session finishes
               dbGetConsistencyVault().then(handleVaultUpdated);
             }}
+          />
+        )}
+        {activeTab === 'break' && (
+          <BreakTimerSuite />
+        )}
+        {activeTab === 'calendar' && (
+          <ConsistencyCalendarView
+            vault={vault}
+            onVaultUpdated={handleVaultUpdated}
+            onJumpToDate={handleJumpToDate}
           />
         )}
         {activeTab === 'insights' && (

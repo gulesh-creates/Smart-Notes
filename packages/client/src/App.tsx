@@ -52,7 +52,8 @@ import {
 import {
   dbGetConsistencyVault,
   dbSaveConsistencyVault,
-  calculateStreak
+  calculateStreak,
+  reconcileConsistencyVaults
 } from './storage/consistencyDb';
 import {
   auth,
@@ -238,10 +239,12 @@ export const App: React.FC = () => {
                       const parsedVault = parseConsistencySyncItem(consistencySyncDoc);
                       if (parsedVault) {
                         const localVault = await dbGetConsistencyVault();
-                        if (!localVault || parsedVault.updatedAt > localVault.updatedAt) {
-                          await dbSaveConsistencyVault(parsedVault);
-                          const strk = calculateStreak(parsedVault);
-                          setConsistencyStreak(strk.currentStreak);
+                        const mergedVault = reconcileConsistencyVaults(localVault, parsedVault);
+                        await dbSaveConsistencyVault(mergedVault);
+                        const strk = calculateStreak(mergedVault);
+                        setConsistencyStreak(strk.currentStreak);
+                        if (!parsedVault.updatedAt || mergedVault.updatedAt > parsedVault.updatedAt) {
+                          await syncConsistencyVaultToFirestore(fbUser.uid, mergedVault).catch(() => { });
                         }
                       }
                     }
@@ -312,10 +315,12 @@ export const App: React.FC = () => {
                     const parsedVault = parseConsistencySyncItem(consistencyDoc);
                     if (parsedVault) {
                       const localVault = await dbGetConsistencyVault();
-                      if (!localVault || parsedVault.updatedAt > localVault.updatedAt) {
-                        await dbSaveConsistencyVault(parsedVault);
-                        const strk = calculateStreak(parsedVault);
-                        setConsistencyStreak(strk.currentStreak);
+                      const mergedVault = reconcileConsistencyVaults(localVault, parsedVault);
+                      await dbSaveConsistencyVault(mergedVault);
+                      const strk = calculateStreak(mergedVault);
+                      setConsistencyStreak(strk.currentStreak);
+                      if (!parsedVault.updatedAt || mergedVault.updatedAt > parsedVault.updatedAt) {
+                        await syncConsistencyVaultToFirestore(fbUser.uid, mergedVault).catch(() => { });
                       }
                     }
                   }
@@ -521,9 +526,30 @@ export const App: React.FC = () => {
       // 2. Fetch latest items from Firestore to guarantee complete multi-device consistency
       const remoteItems = await fetchItemsFromFirestore(currentUser.id);
       if (remoteItems && remoteItems.length > 0) {
-        await dbSaveItemsBatch(remoteItems);
-        const all = await dbGetAllItems(true);
+        // Reconcile Consistency Vault if present in remote
+        const consistencyDoc = remoteItems.find(i => i.id === SYS_CONSISTENCY_VAULT_ID || i.title === '__sys_consistency_data__');
+        if (consistencyDoc) {
+          const parsedVault = parseConsistencySyncItem(consistencyDoc);
+          if (parsedVault) {
+            const localVault = await dbGetConsistencyVault();
+            const mergedVault = reconcileConsistencyVaults(localVault, parsedVault);
+            await dbSaveConsistencyVault(mergedVault);
+            const strk = calculateStreak(mergedVault);
+            setConsistencyStreak(strk.currentStreak);
+            if (!parsedVault.updatedAt || mergedVault.updatedAt > parsedVault.updatedAt) {
+              await syncConsistencyVaultToFirestore(currentUser.id, mergedVault).catch(() => { });
+            }
+          }
+        }
+        await dbSaveItemsBatch(remoteItems.filter(i => !isSystemItem(i)));
+        const all = (await dbGetAllItems(true)).filter(i => !isSystemItem(i));
         setItems(all);
+      } else {
+        // If remote has no items or remote consistency doc missing, push local vault
+        const localVault = await dbGetConsistencyVault();
+        if (localVault) {
+          await syncConsistencyVaultToFirestore(currentUser.id, localVault).catch(() => { });
+        }
       }
 
       setCloudSyncState('synced');

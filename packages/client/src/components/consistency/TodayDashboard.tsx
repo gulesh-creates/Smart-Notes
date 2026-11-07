@@ -26,14 +26,22 @@ export interface TodayDashboardProps {
   vault: ConsistencyVault;
   onVaultUpdated: (updatedVault: ConsistencyVault) => void;
   onStartFocus: (activityId: string) => void;
+  initialDateKey?: string;
 }
 
 export const TodayDashboard: React.FC<TodayDashboardProps> = ({
   vault,
   onVaultUpdated,
-  onStartFocus
+  onStartFocus,
+  initialDateKey
 }) => {
-  const [selectedDateKey, setSelectedDateKey] = useState<string>(getLocalDateKey());
+  const [selectedDateKey, setSelectedDateKey] = useState<string>(initialDateKey || getLocalDateKey());
+
+  React.useEffect(() => {
+    if (initialDateKey) {
+      setSelectedDateKey(initialDateKey);
+    }
+  }, [initialDateKey]);
   const [copiedChecklist, setCopiedChecklist] = useState<boolean>(false);
   const [manualTimeAct, setManualTimeAct] = useState<{ id: string; title: string } | null>(null);
   const [manualMinutes, setManualMinutes] = useState<number>(15);
@@ -89,6 +97,17 @@ export const TodayDashboard: React.FC<TodayDashboardProps> = ({
       });
     }
     groupedByCategory.get(catId)!.items.push(item);
+  }
+
+  // Auto-sort tasks within each category:
+  // Pending tasks (!isCompleted) stay at the top, completed tasks (isCompleted) shift to the bottom
+  for (const group of groupedByCategory.values()) {
+    group.items.sort((a, b) => {
+      if (a.isCompleted !== b.isCompleted) {
+        return a.isCompleted ? 1 : -1;
+      }
+      return a.activity.orderIndex - b.activity.orderIndex;
+    });
   }
 
   const handleToggleCheck = async (activityId: string, currentStatus: boolean) => {

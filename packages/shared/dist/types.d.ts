@@ -204,6 +204,20 @@ export interface ConsistencyReflection {
     improveNext: string;
     updatedAt: number;
 }
+export interface ConsistencyCalendarEvent {
+    id: string;
+    dateKey: string;
+    title: string;
+    notes?: string;
+    tag?: string;
+    color?: string;
+    createdAt: number;
+    updatedAt: number;
+}
+export interface ConsistencyVaultSettings {
+    qualifyingThreshold?: number;
+    timerSound?: string;
+}
 export interface ConsistencyVault {
     categories: ConsistencyCategory[];
     activities: ConsistencyActivity[];
@@ -211,5 +225,7 @@ export interface ConsistencyVault {
     focusSessions: ConsistencyFocusSession[];
     overrides: ConsistencyDailyOverride[];
     reflections: ConsistencyReflection[];
+    calendarEvents?: ConsistencyCalendarEvent[];
+    settings?: ConsistencyVaultSettings;
     updatedAt: number;
 }
