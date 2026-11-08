@@ -1,12 +1,12 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { UserAccount } from '@smartnotes/shared';
 import {
-  IconSettings, IconSun, IconMoon, IconMonitor, IconExport,
-  IconImport, IconSync, IconClose, IconCheck, IconTrash, IconFolder, IconNote
+  IconSun, IconMoon, IconMonitor, IconExport,
+  IconClose, IconTrash
 } from '../icons/Icons';
 import { exportLibraryToZip, inspectZipBackupForRestore, applyRestoreFromZip, RestorePreview } from '../../export/archiveEngine';
-import { detectPrototypeDatabase, migrateFromPrototypeDatabase, MigrationSummary } from '../../migration/prototypeMigration';
-import { dbClearAllData } from '../../storage/db';
+import { dbClearAllData, dbGetAllItems, dbDeleteItem } from '../../storage/db';
+import { isSampleOrPrototypeItem } from '../../sampleData';
 
 export interface SyncSettingsModalProps {
   isOpen: boolean;
@@ -15,8 +15,7 @@ export interface SyncSettingsModalProps {
   stats: { notesCount: number; foldersCount: number; assetsCount: number };
   onClose: () => void;
   onThemeChange: (theme: 'light' | 'dark' | 'system') => void;
-  onLogin: (email: string, password: string) => Promise<void>;
-  onRegister: (email: string, password: string, displayName: string) => Promise<void>;
+  onGoogleLogin: () => Promise<void>;
   onLogout: () => void;
   onRefreshData: () => void;
   onShowToast: (msg: string) => void;
@@ -29,19 +28,14 @@ export const SyncSettingsModal: React.FC<SyncSettingsModalProps> = ({
   stats,
   onClose,
   onThemeChange,
-  onLogin,
-  onRegister,
+  onGoogleLogin,
   onLogout,
   onRefreshData,
   onShowToast
 }) => {
-  const [activeTab, setActiveTab] = useState<'account' | 'appearance' | 'backup' | 'migration'>('account');
-  
-  // Auth Form State
-  const [authMode, setAuthMode] = useState<'login' | 'register'>('login');
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
-  const [displayName, setDisplayName] = useState('');
+  const [activeTab, setActiveTab] = useState<'account' | 'appearance' | 'backup'>('account');
+
+  // Google Auth State
   const [authLoading, setAuthLoading] = useState(false);
   const [authError, setAuthError] = useState('');
 
@@ -51,44 +45,22 @@ export const SyncSettingsModal: React.FC<SyncSettingsModalProps> = ({
   const [restoreFile, setRestoreFile] = useState<File | null>(null);
   const [restoreLoading, setRestoreLoading] = useState(false);
 
-  // Prototype Migration State
-  const [hasPrototypeDb, setHasPrototypeDb] = useState(false);
-  const [migrationSummary, setMigrationSummary] = useState<MigrationSummary | null>(null);
-  const [isMigrating, setIsMigrating] = useState(false);
-
-  useEffect(() => {
-    if (isOpen) {
-      detectPrototypeDatabase().then(setHasPrototypeDb);
-    }
-  }, [isOpen]);
-
   if (!isOpen) return null;
 
-  const handleAuthSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const handleGoogleSignIn = async () => {
     setAuthLoading(true);
     setAuthError('');
     try {
-      if (authMode === 'login') {
-        await onLogin(email.trim(), password);
-        setPassword('');
-        onShowToast('Signed in successfully');
-      } else {
-        await onRegister(email.trim(), password, displayName.trim());
-        setPassword('');
-        onShowToast('Account registered and signed in');
-      }
+      await onGoogleLogin();
+      onShowToast('Signed in successfully with Google');
     } catch (err: any) {
-      setAuthError(err.message || 'Authentication failed');
+      setAuthError(err.message || 'Google sign-in failed');
     } finally {
       setAuthLoading(false);
     }
   };
 
   const handleSignOut = async () => {
-    setEmail('');
-    setPassword('');
-    setDisplayName('');
     setAuthError('');
     await onLogout();
   };
@@ -146,17 +118,15 @@ export const SyncSettingsModal: React.FC<SyncSettingsModalProps> = ({
     }
   };
 
-  const handleMigratePrototype = async () => {
-    setIsMigrating(true);
-    try {
-      const summary = await migrateFromPrototypeDatabase();
-      setMigrationSummary(summary);
+  const handlePurgeSampleData = async () => {
+    if (window.confirm('Purge all demo/prototype sample items from database and trash? Your personal notes will be kept safe.')) {
+      const all = await dbGetAllItems(true);
+      const toDelete = all.filter(i => isSampleOrPrototypeItem(i));
+      for (const item of toDelete) {
+        await dbDeleteItem(item.id);
+      }
       onRefreshData();
-      onShowToast(`Migrated ${summary.notesMigrated} notes & ${summary.assetsMigrated} documents!`);
-    } catch (err: any) {
-      alert('Migration failed: ' + err.message);
-    } finally {
-      setIsMigrating(false);
+      onShowToast(`Purged ${toDelete.length} sample/prototype items`);
     }
   };
 
@@ -183,36 +153,41 @@ export const SyncSettingsModal: React.FC<SyncSettingsModalProps> = ({
         justifyContent: 'center',
         padding: '16px'
       }}
+      onClick={onClose}
     >
       <div
         className="modal-card"
         style={{
-          background: 'var(--bg-surface)',
-          border: '1px solid var(--border-medium)',
-          borderRadius: 'var(--radius-card)',
           width: '100%',
-          maxWidth: '620px',
-          maxHeight: '85vh',
+          maxWidth: '560px',
+          maxHeight: '90vh',
+          background: 'var(--bg-surface)',
+          borderRadius: 'var(--radius-card)',
+          border: '1px solid var(--border-subtle)',
+          boxShadow: 'var(--shadow-modal)',
           display: 'flex',
           flexDirection: 'column',
-          boxShadow: 'var(--shadow-lg)',
           overflow: 'hidden'
         }}
+        onClick={e => e.stopPropagation()}
       >
         {/* Header */}
         <div style={{ padding: '16px 22px', borderBottom: '1px solid var(--border-subtle)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-            <IconSettings size={18} />
-            <h3 style={{ fontSize: '1.1rem', fontWeight: 800, color: 'var(--text-main)' }}>Settings & Cloud Sync</h3>
+          <div>
+            <h2 style={{ fontSize: '1.15rem', fontWeight: 800, color: 'var(--text-main)', margin: 0 }}>
+              Settings & Cloud Account
+            </h2>
+            <div style={{ fontSize: '0.75rem', color: 'var(--text-tertiary)', marginTop: '2px' }}>
+              {stats.notesCount} personal note{stats.notesCount !== 1 ? 's' : ''} &bull; {stats.foldersCount} folder{stats.foldersCount !== 1 ? 's' : ''}
+            </div>
           </div>
           <button type="button" className="btn btn-icon btn-sm" onClick={onClose}>
             <IconClose size={16} />
           </button>
         </div>
 
-        {/* Navigation Tabs */}
+        {/* Tabs Bar */}
         <div
-          className="settings-modal-tabs"
           style={{
             display: 'flex',
             borderBottom: '1px solid var(--border-subtle)',
@@ -228,8 +203,7 @@ export const SyncSettingsModal: React.FC<SyncSettingsModalProps> = ({
           {[
             { id: 'account', label: 'Cloud Account' },
             { id: 'appearance', label: 'Appearance' },
-            { id: 'backup', label: 'Export & Restore' },
-            { id: 'migration', label: 'Prototype Data' }
+            { id: 'backup', label: 'Export & Restore' }
           ].map(tab => (
             <button
               key={tab.id}
@@ -255,148 +229,110 @@ export const SyncSettingsModal: React.FC<SyncSettingsModalProps> = ({
 
         {/* Tab Content */}
         <div style={{ padding: '20px 22px', overflowY: 'auto', flex: 1 }}>
-          {/* TAB 1: ACCOUNT & SYNC */}
+          {/* TAB 1: GOOGLE ACCOUNT & CLOUD SYNC */}
           {activeTab === 'account' && (
             <div>
               {currentUser ? (
-                <div style={{ background: 'var(--bg-surface-elevated)', border: '1px solid var(--border-subtle)', borderRadius: 'var(--radius-md)', padding: '16px' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '10px' }}>
+                <div style={{ background: 'var(--bg-surface-elevated)', border: '1px solid var(--border-subtle)', borderRadius: 'var(--radius-md)', padding: '18px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '12px' }}>
                     <div>
-                      <div style={{ fontSize: '0.96rem', fontWeight: 700, color: 'var(--text-main)' }}>{currentUser.displayName}</div>
-                      <div style={{ fontSize: '0.78rem', color: 'var(--text-secondary)' }}>{currentUser.email}</div>
+                      <div style={{ fontSize: '1rem', fontWeight: 800, color: 'var(--text-main)' }}>{currentUser.displayName}</div>
+                      <div style={{ fontSize: '0.82rem', color: 'var(--text-secondary)', marginTop: '2px' }}>{currentUser.email}</div>
                     </div>
-                    <span className="badge badge-lime">Signed In</span>
+                    <span className="badge badge-lime">Authorized Account</span>
                   </div>
-                  <p style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', marginBottom: '14px' }}>
-                    Your notes are automatically synced with the cloud. All edits continue to work completely offline.
+                  <p style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', marginBottom: '16px', lineHeight: 1.5 }}>
+                    Your notes, attachments, and consistency tracker are automatically synced with Firebase cloud under this authorized account.
                   </p>
-                  <button type="button" className="btn btn-sm" onClick={handleSignOut} style={{ color: 'var(--danger)' }}>
+                  <button type="button" className="btn btn-sm" onClick={handleSignOut} style={{ color: 'var(--danger)', borderColor: 'var(--border-subtle)' }}>
                     Sign Out
                   </button>
                 </div>
               ) : (
-                <div>
-                  <div style={{ display: 'flex', gap: '8px', marginBottom: '16px' }}>
-                    <button
-                      type="button"
-                      className={`btn btn-sm ${authMode === 'login' ? 'btn-primary' : ''}`}
-                      onClick={() => setAuthMode('login')}
-                    >
-                      Sign In
-                    </button>
-                    <button
-                      type="button"
-                      className={`btn btn-sm ${authMode === 'register' ? 'btn-primary' : ''}`}
-                      onClick={() => setAuthMode('register')}
-                    >
-                      Create Account
-                    </button>
-                  </div>
-
-                  {authError && (
-                    <div style={{ background: 'var(--danger-bg)', border: '1px solid var(--danger)', borderRadius: 'var(--radius-sm)', padding: '8px 12px', fontSize: '0.8rem', color: 'var(--danger)', marginBottom: '14px' }}>
-                      {authError}
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                  <div style={{ background: 'var(--bg-surface-elevated)', border: '1px solid var(--border-subtle)', borderRadius: 'var(--radius-md)', padding: '18px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
+                      <span style={{ fontSize: '0.92rem', fontWeight: 800, color: 'var(--text-main)' }}>
+                        Secure Gmail Sign-In
+                      </span>
                     </div>
-                  )}
+                    <p style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', margin: '0 0 16px 0', lineHeight: 1.5 }}>
+                      This Smart Notes workspace is private and strictly restricted. Only the authorized account <strong>gulesh.patel.csit@gmail.com</strong> can log in and access this data.
+                    </p>
 
-                  <form onSubmit={handleAuthSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                    {authMode === 'register' && (
-                      <div>
-                        <label style={{ fontSize: '0.76rem', fontWeight: 600, color: 'var(--text-secondary)', display: 'block', marginBottom: '4px' }}>Name</label>
-                        <input
-                          type="text"
-                          required
-                          autoComplete="name"
-                          value={displayName}
-                          onChange={e => setDisplayName(e.target.value)}
-                          placeholder="Your Name"
-                          style={{ width: '100%', padding: '8px 12px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-medium)', background: 'var(--bg-surface-elevated)', color: 'var(--text-main)', fontSize: '0.86rem' }}
-                        />
+                    {authError && (
+                      <div style={{ background: 'var(--danger-bg)', border: '1px solid var(--danger)', borderRadius: 'var(--radius-sm)', padding: '10px 14px', fontSize: '0.82rem', color: 'var(--danger)', marginBottom: '16px' }}>
+                        {authError}
                       </div>
                     )}
-                    <div>
-                      <label style={{ fontSize: '0.76rem', fontWeight: 600, color: 'var(--text-secondary)', display: 'block', marginBottom: '4px' }}>
-                        Username or Email
-                      </label>
-                      <input
-                        type="text"
-                        required
-                        autoComplete="username"
-                        value={email}
-                        onChange={e => setEmail(e.target.value)}
-                        placeholder="Enter username or email address"
-                        style={{ width: '100%', padding: '8px 12px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-medium)', background: 'var(--bg-surface-elevated)', color: 'var(--text-main)', fontSize: '0.86rem' }}
-                      />
-                    </div>
-                    <div>
-                      <label style={{ fontSize: '0.76rem', fontWeight: 600, color: 'var(--text-secondary)', display: 'block', marginBottom: '4px' }}>Password</label>
-                      <input
-                        type="password"
-                        required
-                        autoComplete={authMode === 'login' ? 'current-password' : 'new-password'}
-                        value={password}
-                        onChange={e => setPassword(e.target.value)}
-                        placeholder="Enter password"
-                        style={{ width: '100%', padding: '8px 12px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-medium)', background: 'var(--bg-surface-elevated)', color: 'var(--text-main)', fontSize: '0.86rem' }}
-                      />
-                    </div>
-                    <button type="submit" className="btn btn-primary" disabled={authLoading} style={{ marginTop: '8px' }}>
-                      {authLoading ? 'Connecting to Firebase...' : authMode === 'login' ? 'Sign In & Enable Cloud Sync' : 'Register & Start Syncing'}
+
+                    <button
+                      type="button"
+                      className="btn btn-primary"
+                      onClick={handleGoogleSignIn}
+                      disabled={authLoading}
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        gap: '10px',
+                        width: '100%',
+                        padding: '12px 18px',
+                        fontSize: '0.92rem',
+                        fontWeight: 800,
+                        borderRadius: '8px'
+                      }}
+                    >
+                      <svg width="18" height="18" viewBox="0 0 24 24">
+                        <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" />
+                        <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" />
+                        <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z" />
+                        <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z" />
+                      </svg>
+                      {authLoading ? 'Connecting to Google...' : 'Sign in with Google (Gmail)'}
                     </button>
-                  </form>
+                  </div>
                 </div>
               )}
             </div>
           )}
 
-          {/* TAB 2: APPEARANCE & THEME */}
+          {/* TAB 2: APPEARANCE */}
           {activeTab === 'appearance' && (
             <div>
-              <div style={{ fontSize: '0.85rem', fontWeight: 700, color: 'var(--text-main)', marginBottom: '8px' }}>Theme Preference</div>
-              <p style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', marginBottom: '16px' }}>
-                Smart Notes defaults to a calm, high-contrast light theme with selective lime green highlights, alongside a designed companion dark mode.
-              </p>
-
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '12px', marginBottom: '24px' }}>
+              <div style={{ fontSize: '0.88rem', fontWeight: 700, color: 'var(--text-main)', marginBottom: '14px' }}>Theme Preference</div>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '10px', marginBottom: '20px' }}>
                 {[
-                  { id: 'light', label: 'Light (Default)', icon: <IconSun size={18} /> },
-                  { id: 'dark', label: 'Dark Mode', icon: <IconMoon size={18} /> },
-                  { id: 'system', label: 'System Default', icon: <IconMonitor size={18} /> }
+                  { id: 'light', label: 'Light', icon: IconSun },
+                  { id: 'dark', label: 'Dark', icon: IconMoon },
+                  { id: 'system', label: 'System', icon: IconMonitor }
                 ].map(th => {
-                  const isCurrent = currentTheme === th.id;
+                  const Icon = th.icon;
+                  const isSel = currentTheme === th.id;
                   return (
                     <button
                       key={th.id}
                       type="button"
                       style={{
-                        padding: '16px 12px',
-                        border: isCurrent ? '2px solid var(--lime-primary)' : '1px solid var(--border-medium)',
-                        borderRadius: 'var(--radius-md)',
-                        background: isCurrent ? 'var(--lime-pale)' : 'var(--bg-surface-elevated)',
-                        color: isCurrent ? '#12241A' : 'var(--text-main)',
+                        padding: '14px',
+                        borderRadius: 'var(--radius-sm)',
+                        border: isSel ? '2px solid var(--lime-primary)' : '1px solid var(--border-medium)',
+                        background: isSel ? 'var(--bg-surface-subtle)' : 'var(--bg-surface-elevated)',
+                        color: isSel ? 'var(--text-main)' : 'var(--text-secondary)',
                         cursor: 'pointer',
                         display: 'flex',
                         flexDirection: 'column',
                         alignItems: 'center',
-                        gap: '8px',
-                        fontWeight: 600,
-                        fontSize: '0.82rem'
+                        gap: '6px',
+                        fontWeight: isSel ? 700 : 500
                       }}
                       onClick={() => onThemeChange(th.id as any)}
                     >
-                      {th.icon}
-                      <span>{th.label}</span>
+                      <Icon size={20} color={isSel ? 'var(--lime-primary)' : 'currentColor'} />
+                      <span style={{ fontSize: '0.8rem' }}>{th.label}</span>
                     </button>
                   );
                 })}
-              </div>
-
-              {/* Design System Reference Card */}
-              <div style={{ background: 'var(--card-dark-accent)', color: 'var(--card-dark-text)', borderRadius: 'var(--radius-md)', padding: '16px' }}>
-                <div style={{ fontSize: '0.74rem', fontWeight: 700, color: 'var(--lime-primary)', textTransform: 'uppercase' }}>Reference Image 3 Palette</div>
-                <div style={{ fontSize: '0.84rem', marginTop: '4px', opacity: 0.9 }}>
-                  White canvas, dark forest cards, selective lime action buttons, 100% custom SVG icons.
-                </div>
               </div>
             </div>
           )}
@@ -438,70 +374,34 @@ export const SyncSettingsModal: React.FC<SyncSettingsModalProps> = ({
                     {restorePreview.isValid ? (
                       <>
                         <div style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', marginBottom: '10px' }}>
-                          Found: {restorePreview.folderCount} folders, {restorePreview.noteCount} notes, {restorePreview.assetCount} attachments.
+                          Ready to restore {restorePreview.manifest?.items?.length || 0} items and {restorePreview.manifest?.assets?.length || 0} binary documents.
                         </div>
                         <button type="button" className="btn btn-sm btn-primary" onClick={handleApplyRestore} disabled={restoreLoading}>
-                          <IconImport size={14} />
-                          {restoreLoading ? 'Applying Restore...' : 'Confirm Restore into Library'}
+                          {restoreLoading ? 'Applying Restore...' : 'Apply Restore'}
                         </button>
                       </>
                     ) : (
-                      <div style={{ fontSize: '0.75rem', color: 'var(--danger)' }}>
+                      <div style={{ fontSize: '0.76rem', color: 'var(--danger)' }}>
                         {restorePreview.warnings.join('; ')}
                       </div>
                     )}
                   </div>
                 )}
               </div>
-            </div>
-          )}
 
-          {/* TAB 4: PROTOTYPE MIGRATION */}
-          {activeTab === 'migration' && (
-            <div>
-              <div style={{ fontSize: '0.88rem', fontWeight: 700, color: 'var(--text-main)', marginBottom: '4px' }}>Prototype Data Importer</div>
-              <p style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', marginBottom: '14px' }}>
-                Safely moves existing folders, notes, and documents from the single-file prototype (SmartNotesDB_v1) into the production database. Separates base64 data into binary blobs without erasing prototype data.
-              </p>
-
-              {hasPrototypeDb ? (
-                <div style={{ background: 'var(--bg-surface-elevated)', border: '1px solid var(--lime-border)', borderRadius: 'var(--radius-sm)', padding: '14px', marginBottom: '14px' }}>
-                  <div style={{ fontSize: '0.82rem', fontWeight: 700, color: 'var(--lime-primary)', marginBottom: '4px' }}>
-                    Prototype Database Detected (SmartNotesDB_v1)
-                  </div>
-                  <p style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', marginBottom: '12px' }}>
-                    Click below to migrate your existing notes, folder tree, and Kyoto trip data into the new schema.
-                  </p>
-                  <button type="button" className="btn btn-sm btn-primary" onClick={handleMigratePrototype} disabled={isMigrating}>
-                    {isMigrating ? 'Migrating Data...' : 'Migrate Prototype Data'}
+              {/* Danger Zone */}
+              <div style={{ marginTop: '24px', paddingTop: '16px', borderTop: '1px solid var(--border-subtle)' }}>
+                <div style={{ fontSize: '0.82rem', fontWeight: 700, color: 'var(--danger)', marginBottom: '8px' }}>Danger Zone</div>
+                <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                  <button type="button" className="btn btn-sm" onClick={handlePurgeSampleData} style={{ color: 'var(--danger)', borderColor: 'var(--border-subtle)' }}>
+                    <IconTrash size={14} />
+                    Purge All Demo/Sample Data
+                  </button>
+                  <button type="button" className="btn btn-sm" onClick={handleResetData} style={{ color: 'var(--danger)', borderColor: 'var(--danger)' }}>
+                    <IconTrash size={14} />
+                    Reset All Local Data
                   </button>
                 </div>
-              ) : (
-                <div style={{ background: 'var(--bg-surface-elevated)', border: '1px solid var(--border-subtle)', borderRadius: 'var(--radius-sm)', padding: '12px', fontSize: '0.8rem', color: 'var(--text-secondary)', marginBottom: '14px' }}>
-                  No existing SmartNotesDB_v1 database found in this browser origin. You can also import prototype ZIP backups via the "Export & Restore" tab.
-                </div>
-              )}
-
-              {migrationSummary && (
-                <div style={{ background: 'var(--bg-surface-elevated)', border: '1px solid var(--border-medium)', borderRadius: 'var(--radius-sm)', padding: '12px', fontSize: '0.8rem' }}>
-                  <div style={{ fontWeight: 700, color: 'var(--text-main)', marginBottom: '6px' }}>Migration Summary</div>
-                  <div>Folders migrated: {migrationSummary.foldersMigrated}</div>
-                  <div>Notes migrated: {migrationSummary.notesMigrated}</div>
-                  <div>Attachments converted: {migrationSummary.assetsMigrated}</div>
-                  {migrationSummary.errors.length > 0 && (
-                    <div style={{ color: 'var(--danger)', marginTop: '4px' }}>
-                      Errors: {migrationSummary.errors.join(', ')}
-                    </div>
-                  )}
-                </div>
-              )}
-
-              <div style={{ marginTop: '24px', paddingTop: '16px', borderTop: '1px solid var(--border-subtle)' }}>
-                <div style={{ fontSize: '0.82rem', fontWeight: 700, color: 'var(--danger)', marginBottom: '4px' }}>Danger Zone</div>
-                <button type="button" className="btn btn-sm" onClick={handleResetData} style={{ color: 'var(--danger)', borderColor: 'var(--danger)' }}>
-                  <IconTrash size={14} />
-                  Reset All Local Data
-                </button>
               </div>
             </div>
           )}
@@ -517,4 +417,3 @@ export const SyncSettingsModal: React.FC<SyncSettingsModalProps> = ({
     </div>
   );
 };
-

@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Item } from '@smartnotes/shared';
+import { isSampleOrPrototypeItem } from '../../sampleData';
 import {
   IconFolder, IconFolderOpen, IconNote, IconSubnote, IconPlus,
   IconChevronRight, IconChevronDown, IconTrash, IconPin, IconSync,
@@ -39,7 +40,7 @@ export const TreeRail: React.FC<TreeRailProps> = ({
   onMoveItem,
   onDeleteItem
 }) => {
-  const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set(['f-personal', 'f-work', 'f-engineering', 'f-design', 'f-storage-sync']));
+  const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
 
   // Auto-expand ancestors when a note or folder is selected
   useEffect(() => {
@@ -70,14 +71,14 @@ export const TreeRail: React.FC<TreeRailProps> = ({
     });
   };
 
-  const activeNotes = items.filter(i => i.kind === 'note' && !i.isDeleted);
+  const activeNotes = items.filter(i => i.kind === 'note' && !i.isDeleted && !isSampleOrPrototypeItem(i));
   const pinnedNotes = activeNotes.filter(n => n.isPinned);
-  const trashedItems = items.filter(i => i.isDeleted);
+  const trashedItems = items.filter(i => i.isDeleted && !isSampleOrPrototypeItem(i));
 
   // Recursive tree renderer for unlimited depth
   const renderTreeItem = (item: Item, depth = 0) => {
-    const childFolders = items.filter(i => i.kind === 'folder' && i.parentId === item.id && !i.isDeleted);
-    const childNotes = items.filter(i => i.kind === 'note' && i.parentId === item.id && !i.isDeleted);
+    const childFolders = items.filter(i => i.kind === 'folder' && i.parentId === item.id && !i.isDeleted && !isSampleOrPrototypeItem(i));
+    const childNotes = items.filter(i => i.kind === 'note' && i.parentId === item.id && !i.isDeleted && !isSampleOrPrototypeItem(i));
     const hasChildren = childFolders.length + childNotes.length > 0;
     const isExpanded = expandedIds.has(item.id);
 
@@ -247,8 +248,8 @@ export const TreeRail: React.FC<TreeRailProps> = ({
     );
   };
 
-  const rootFolders = items.filter(i => i.kind === 'folder' && i.parentId === null && !i.isDeleted);
-  const rootNotes = items.filter(i => i.kind === 'note' && i.parentId === null && !i.isDeleted);
+  const rootFolders = items.filter(i => i.kind === 'folder' && i.parentId === null && !i.isDeleted && !isSampleOrPrototypeItem(i));
+  const rootNotes = items.filter(i => i.kind === 'note' && i.parentId === null && !i.isDeleted && !isSampleOrPrototypeItem(i));
 
   return (
     <aside

@@ -28,14 +28,16 @@ import { ConflictModal } from './components/modals/ConflictModal';
 import { SyncSettingsModal } from './components/modals/SyncSettingsModal';
 import { FolderModal } from './components/modals/FolderModal';
 import { ConfirmDeleteModal } from './components/modals/ConfirmDeleteModal';
-import { INITIAL_SAMPLE_ITEMS, createInitialSampleAssets } from './sampleData';
+import { isSampleOrPrototypeItem } from './sampleData';
 import {
   dbGetAllItems,
   dbSaveItem,
   dbSaveItemsBatch,
   dbMarkItemDeleted,
+  dbDeleteItem,
   dbGetAsset,
   dbSaveAsset,
+  dbDeleteAsset,
   StoredAssetRecord,
   dbGetSetting,
   dbSetSetting,
@@ -57,8 +59,10 @@ import {
 } from './storage/consistencyDb';
 import {
   auth,
+  firebaseGoogleSignIn,
   firebaseAuthenticate,
   firebaseSignOut,
+  AUTHORIZED_EMAIL,
   syncItemToFirestore,
   deleteItemInFirestore,
   fetchItemsFromFirestore,
@@ -75,7 +79,7 @@ import {
   parseConsistencySyncItem,
   syncConsistencyVaultToFirestore
 } from './firebase/firebase';
-import { onAuthStateChanged } from 'firebase/auth';
+import { onAuthStateChanged, signOut } from 'firebase/auth';
 
 const isSystemItem = (item: Item): boolean =>
   item.id === SYS_GITHUB_CREDS_ID ||
@@ -197,18 +201,27 @@ export const App: React.FC = () => {
 
         // Load items from local IndexedDB first (instant offline availability)
         let storedItems = (await dbGetAllItems(true)).filter(i => !isSystemItem(i));
-        if (!storedItems || storedItems.length === 0) {
-          storedItems = INITIAL_SAMPLE_ITEMS;
-          await dbSaveItemsBatch(storedItems);
-          const sampleAssets = createInitialSampleAssets();
-          for (const a of sampleAssets) {
-            await dbSaveAsset(a);
+
+        // Purge any dummy sample / prototype demo data from local IndexedDB and trash
+        const sampleItems = storedItems.filter(i => isSampleOrPrototypeItem(i));
+        if (sampleItems.length > 0) {
+          for (const s of sampleItems) {
+            await dbDeleteItem(s.id);
           }
+          storedItems = storedItems.filter(i => !isSampleOrPrototypeItem(i));
         }
+
+        try {
+          await dbDeleteAsset('asset-sample-img');
+          await dbDeleteAsset('asset-sample-pdf');
+        } catch { }
+
         setItems(storedItems);
         const firstNote = storedItems.find(i => i.kind === 'note' && !i.isDeleted);
         if (firstNote) {
           setSelectedNoteId(firstNote.id);
+        } else {
+          setSelectedNoteId(null);
         }
 
         // Load GitHub credentials from local IndexedDB
@@ -230,10 +243,21 @@ export const App: React.FC = () => {
         if (auth) {
           unsubscribeAuth = onAuthStateChanged(auth, async (fbUser) => {
             if (fbUser) {
+              const userEmail = (fbUser.email || '').toLowerCase().trim();
+              if (userEmail !== AUTHORIZED_EMAIL.toLowerCase()) {
+                console.warn(`Unauthorized login attempt by ${userEmail}. Signing out.`);
+                await firebaseSignOut();
+                setCurrentUser(null);
+                setAuthToken('');
+                setCloudSyncState('offline');
+                showToast(`Access Denied: Only ${AUTHORIZED_EMAIL} is authorized.`);
+                return;
+              }
+
               const userAccount: UserAccount = {
                 id: fbUser.uid,
-                email: fbUser.email || `${fbUser.displayName || 'user'}@smartnotes.app`,
-                displayName: fbUser.displayName || (fbUser.email ? fbUser.email.split('@')[0] : 'User'),
+                email: userEmail,
+                displayName: fbUser.displayName || 'Gulesh Patel',
                 createdAt: Date.now()
               };
               setAuthToken(fbUser.uid);
@@ -287,10 +311,10 @@ export const App: React.FC = () => {
                       }
                     }
 
-                    // 3. Regular note items (filtered from system items)
-                    const regularItems = remoteItems.filter(i => !isSystemItem(i));
+                    // 3. Regular note items (filtered from system items and any sample dummy data)
+                    const regularItems = remoteItems.filter(i => !isSystemItem(i) && !isSampleOrPrototypeItem(i));
                     await dbSaveItemsBatch(regularItems);
-                    const all = (await dbGetAllItems(true)).filter(i => !isSystemItem(i));
+                    const all = (await dbGetAllItems(true)).filter(i => !isSystemItem(i) && !isSampleOrPrototypeItem(i));
                     setItems(all);
                     setCloudSyncState('synced');
                   }
@@ -320,9 +344,13 @@ export const App: React.FC = () => {
 
               // Merge local items with Firestore to guarantee no offline work is lost
               try {
-                const localItems = (await dbGetAllItems(true)).filter(i => !isSystemItem(i));
+                const localItems = (await dbGetAllItems(true)).filter(i => !isSystemItem(i) && !isSampleOrPrototypeItem(i));
                 for (const item of localItems) {
                   await syncItemToFirestore(fbUser.uid, item).catch(() => { });
+                }
+                const localVault = await dbGetConsistencyVault();
+                if (localVault) {
+                  await syncConsistencyVaultToFirestore(fbUser.uid, localVault).catch(() => { });
                 }
                 const remote = await fetchItemsFromFirestore(fbUser.uid);
                 if (remote && remote.length > 0) {
@@ -362,9 +390,9 @@ export const App: React.FC = () => {
                       }
                     }
                   }
-                  const regular = remote.filter(i => !isSystemItem(i));
+                  const regular = remote.filter(i => !isSystemItem(i) && !isSampleOrPrototypeItem(i));
                   await dbSaveItemsBatch(regular);
-                  const all = (await dbGetAllItems(true)).filter(i => !isSystemItem(i));
+                  const all = (await dbGetAllItems(true)).filter(i => !isSystemItem(i) && !isSampleOrPrototypeItem(i));
                   setItems(all);
                 }
               } catch (mergeErr) {
@@ -478,57 +506,54 @@ export const App: React.FC = () => {
     await dbSetSetting('app_theme', newTheme);
   };
 
-  const handleLogin = async (email: string, pass: string) => {
+  const handleGoogleLogin = async () => {
     try {
       setCloudSyncState('pending');
-      const fbUser = await firebaseAuthenticate(email, pass);
+      const fbUser = await firebaseGoogleSignIn();
       setAuthToken(fbUser.id);
       setCurrentUser(fbUser);
       await dbSetSetting('auth_token', fbUser.id);
       await dbSetSetting('auth_user', JSON.stringify(fbUser));
-      showToast(`Welcome back, ${fbUser.displayName}!`);
+      showToast(`Welcome back, ${fbUser.displayName || 'Gulesh'}!`);
 
-      // 1. Push any local notes/folders to Firestore so PC and Phone work together
-      const localItems = await dbGetAllItems(true);
+      // 1. Push genuine local notes to Firestore so PC and Phone stay synchronized
+      const localItems = (await dbGetAllItems(true)).filter(i => !isSystemItem(i) && !isSampleOrPrototypeItem(i));
       for (const item of localItems) {
         await syncItemToFirestore(fbUser.id, item).catch(() => { });
+      }
+
+      // Push local consistency vault
+      const localVault = await dbGetConsistencyVault();
+      if (localVault) {
+        await syncConsistencyVaultToFirestore(fbUser.id, localVault).catch(() => { });
       }
 
       // 2. Fetch all cloud items and merge into local IndexedDB
       const remoteItems = await fetchItemsFromFirestore(fbUser.id);
       if (remoteItems && remoteItems.length > 0) {
-        await dbSaveItemsBatch(remoteItems);
-        const all = await dbGetAllItems(true);
+        // Reconcile consistency vault if in remote
+        const consistencyDoc = remoteItems.find(i => i.id === SYS_CONSISTENCY_VAULT_ID || i.title === '__sys_consistency_data__');
+        if (consistencyDoc) {
+          const parsedVault = parseConsistencySyncItem(consistencyDoc);
+          if (parsedVault) {
+            const mergedVault = reconcileConsistencyVaults(localVault, parsedVault);
+            await dbSaveConsistencyVault(mergedVault);
+            const strk = calculateStreak(mergedVault);
+            setConsistencyStreak(strk.currentStreak);
+          }
+        }
+
+        const regularItems = remoteItems.filter(i => !isSystemItem(i) && !isSampleOrPrototypeItem(i));
+        await dbSaveItemsBatch(regularItems);
+        const all = (await dbGetAllItems(true)).filter(i => !isSystemItem(i) && !isSampleOrPrototypeItem(i));
         setItems(all);
       }
 
       setCloudSyncState('synced');
     } catch (fbErr: any) {
-      console.warn('Firebase login attempt failed:', fbErr?.message || fbErr);
+      console.warn('Google login attempt failed:', fbErr?.message || fbErr);
       setCloudSyncState('offline');
-      throw new Error(fbErr?.message || 'Login failed. Please check your credentials.');
-    }
-  };
-
-  const handleRegister = async (email: string, pass: string, name: string) => {
-    try {
-      setCloudSyncState('pending');
-      const fbUser = await firebaseAuthenticate(email, pass, name);
-      setAuthToken(fbUser.id);
-      setCurrentUser(fbUser);
-      await dbSetSetting('auth_token', fbUser.id);
-      await dbSetSetting('auth_user', JSON.stringify(fbUser));
-      showToast(`Account created for ${fbUser.displayName}!`);
-
-      const localItems = await dbGetAllItems(true);
-      for (const item of localItems) {
-        await syncItemToFirestore(fbUser.id, item).catch(() => { });
-      }
-      setCloudSyncState('synced');
-    } catch (fbErr: any) {
-      console.warn('Firebase register attempt failed:', fbErr?.message || fbErr);
-      setCloudSyncState('offline');
-      throw new Error(fbErr?.message || 'Registration failed.');
+      throw new Error(fbErr?.message || 'Google Sign-In failed.');
     }
   };
 
@@ -579,8 +604,8 @@ export const App: React.FC = () => {
             }
           }
         }
-        await dbSaveItemsBatch(remoteItems.filter(i => !isSystemItem(i)));
-        const all = (await dbGetAllItems(true)).filter(i => !isSystemItem(i));
+        await dbSaveItemsBatch(remoteItems.filter(i => !isSystemItem(i) && !isSampleOrPrototypeItem(i)));
+        const all = (await dbGetAllItems(true)).filter(i => !isSystemItem(i) && !isSampleOrPrototypeItem(i));
         setItems(all);
       } else {
         // If remote has no items or remote consistency doc missing, push local vault
@@ -1007,7 +1032,7 @@ export const App: React.FC = () => {
 
   // Filtered notes list for center panel
   const getNotesForList = (): Item[] => {
-    let base = items.filter(i => i.kind === 'note' && !isSystemItem(i));
+    let base = items.filter(i => i.kind === 'note' && !isSystemItem(i) && !isSampleOrPrototypeItem(i));
 
     if (specialFilter === 'trash') {
       return base.filter(i => i.isDeleted);
@@ -1374,23 +1399,22 @@ export const App: React.FC = () => {
         onDismiss={() => setSyncConflict(null)}
       />
 
-      {/* MODAL: SYNC, ACCOUNTS, APPEARANCE, BACKUP & MIGRATION */}
+      {/* MODAL: SYNC, ACCOUNTS, APPEARANCE, BACKUP */}
       <SyncSettingsModal
         isOpen={isSettingsModalOpen}
         currentUser={currentUser}
         currentTheme={theme}
         stats={{
-          notesCount: items.filter(i => i.kind === 'note' && !i.isDeleted).length,
-          foldersCount: items.filter(i => i.kind === 'folder' && !i.isDeleted).length,
-          assetsCount: items.reduce((acc, n) => acc + (n.assetIds?.length || 0), 0)
+          notesCount: items.filter(i => i.kind === 'note' && !i.isDeleted && !isSampleOrPrototypeItem(i)).length,
+          foldersCount: items.filter(i => i.kind === 'folder' && !i.isDeleted && !isSampleOrPrototypeItem(i)).length,
+          assetsCount: items.filter(i => !isSampleOrPrototypeItem(i)).reduce((acc, n) => acc + (n.assetIds?.length || 0), 0)
         }}
         onClose={() => setIsSettingsModalOpen(false)}
         onThemeChange={handleThemeChange}
-        onLogin={handleLogin}
-        onRegister={handleRegister}
+        onGoogleLogin={handleGoogleLogin}
         onLogout={handleLogout}
         onRefreshData={async () => {
-          const all = await dbGetAllItems(true);
+          const all = (await dbGetAllItems(true)).filter(i => !isSystemItem(i) && !isSampleOrPrototypeItem(i));
           setItems(all);
           const first = all.find(i => i.kind === 'note' && !i.isDeleted);
           if (first) setSelectedNoteId(first.id);

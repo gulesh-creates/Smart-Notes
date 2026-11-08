@@ -2,6 +2,8 @@ import { initializeApp, getApps, FirebaseApp } from 'firebase/app';
 import { getAnalytics, isSupported as isAnalyticsSupported } from 'firebase/analytics';
 import {
   getAuth,
+  GoogleAuthProvider,
+  signInWithPopup,
   signInWithEmailAndPassword,
   createUserWithEmailAndPassword,
   updateProfile,
@@ -58,6 +60,39 @@ if (typeof window !== 'undefined' && app) {
   }).catch(() => {
     // Analytics optional in offline or test environments
   });
+}
+
+export const AUTHORIZED_EMAIL = 'gulesh.patel.csit@gmail.com';
+
+/**
+ * Signs in using Google Popup and enforces that only gulesh.patel.csit@gmail.com
+ * is allowed to access the Smart Notes vault.
+ */
+export async function firebaseGoogleSignIn(): Promise<UserAccount> {
+  if (!auth) {
+    throw new Error('Firebase is not configured. Please check your environment variables.');
+  }
+
+  const provider = new GoogleAuthProvider();
+  provider.setCustomParameters({
+    prompt: 'select_account'
+  });
+
+  const cred = await signInWithPopup(auth, provider);
+  const user = cred.user;
+  const email = (user.email || '').toLowerCase().trim();
+
+  if (email !== AUTHORIZED_EMAIL.toLowerCase()) {
+    await signOut(auth);
+    throw new Error(`Access Denied: Only ${AUTHORIZED_EMAIL} is authorized to access this Smart Notes workspace.`);
+  }
+
+  return {
+    id: user.uid,
+    email: user.email || AUTHORIZED_EMAIL,
+    displayName: user.displayName || 'Gulesh Patel',
+    createdAt: Date.now()
+  };
 }
 
 /**

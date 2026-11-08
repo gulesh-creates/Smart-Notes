@@ -364,3 +364,25 @@ export async function dbClearAllData(): Promise<void> {
   });
 }
 
+// Permanently delete an item from IndexedDB (purge item completely)
+export async function dbDeleteItem(id: string): Promise<void> {
+  const db = await getDatabase();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(['items'], 'readwrite');
+    tx.objectStore('items').delete(id);
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error);
+  });
+}
+
+// Permanently delete an asset from IndexedDB
+export async function dbDeleteAsset(id: string): Promise<void> {
+  const db = await getDatabase();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(['assets'], 'readwrite');
+    tx.objectStore('assets').delete(id);
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error);
+  });
+}
+
