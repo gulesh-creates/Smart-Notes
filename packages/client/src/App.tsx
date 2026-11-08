@@ -211,7 +211,7 @@ export const App: React.FC = () => {
               const userAccount: UserAccount = {
                 id: fbUser.uid,
                 email: fbUser.email || `${fbUser.displayName || 'user'}@smartnotes.app`,
-                displayName: fbUser.displayName || (fbUser.email ? fbUser.email.split('@')[0] : 'gulesh_creates'),
+                displayName: fbUser.displayName || (fbUser.email ? fbUser.email.split('@')[0] : 'User'),
                 createdAt: Date.now()
               };
               setAuthToken(fbUser.uid);

@@ -62,7 +62,7 @@ if (typeof window !== 'undefined' && app) {
 
 /**
  * Normalizes a username into an email string required by Firebase Auth.
- * e.g. "gulesh_creates" -> "gulesh_creates@smartnotes.app"
+ * e.g. "username" -> "username@smartnotes.app"
  */
 export function formatAuthEmail(usernameOrEmail: string): string {
   const clean = usernameOrEmail.trim().toLowerCase();

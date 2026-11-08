@@ -286,7 +286,7 @@ export const GitHubTokenModal: React.FC<GitHubTokenModalProps> = ({
                 required
                 value={username}
                 onChange={(e) => setUsername(e.target.value)}
-                placeholder="e.g. gulesh-creates"
+                placeholder="e.g. octocat or username"
                 style={{ width: '100%', paddingLeft: '30px' }}
                 autoFocus
               />

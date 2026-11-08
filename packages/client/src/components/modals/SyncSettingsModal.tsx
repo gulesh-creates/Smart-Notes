@@ -39,9 +39,9 @@ export const SyncSettingsModal: React.FC<SyncSettingsModalProps> = ({
   
   // Auth Form State
   const [authMode, setAuthMode] = useState<'login' | 'register'>('login');
-  const [email, setEmail] = useState('gulesh_creates');
-  const [password, setPassword] = useState('6266100');
-  const [displayName, setDisplayName] = useState('Gulesh');
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [displayName, setDisplayName] = useState('');
   const [authLoading, setAuthLoading] = useState(false);
   const [authError, setAuthError] = useState('');
 
@@ -70,10 +70,12 @@ export const SyncSettingsModal: React.FC<SyncSettingsModalProps> = ({
     setAuthError('');
     try {
       if (authMode === 'login') {
-        await onLogin(email, password);
+        await onLogin(email.trim(), password);
+        setPassword('');
         onShowToast('Signed in successfully');
       } else {
-        await onRegister(email, password, displayName);
+        await onRegister(email.trim(), password, displayName.trim());
+        setPassword('');
         onShowToast('Account registered and signed in');
       }
     } catch (err: any) {
@@ -81,6 +83,14 @@ export const SyncSettingsModal: React.FC<SyncSettingsModalProps> = ({
     } finally {
       setAuthLoading(false);
     }
+  };
+
+  const handleSignOut = async () => {
+    setEmail('');
+    setPassword('');
+    setDisplayName('');
+    setAuthError('');
+    await onLogout();
   };
 
   const handleExport = async () => {
@@ -260,7 +270,7 @@ export const SyncSettingsModal: React.FC<SyncSettingsModalProps> = ({
                   <p style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', marginBottom: '14px' }}>
                     Your notes are automatically synced with the cloud. All edits continue to work completely offline.
                   </p>
-                  <button type="button" className="btn btn-sm" onClick={onLogout} style={{ color: 'var(--danger)' }}>
+                  <button type="button" className="btn btn-sm" onClick={handleSignOut} style={{ color: 'var(--danger)' }}>
                     Sign Out
                   </button>
                 </div>
@@ -296,6 +306,7 @@ export const SyncSettingsModal: React.FC<SyncSettingsModalProps> = ({
                         <input
                           type="text"
                           required
+                          autoComplete="name"
                           value={displayName}
                           onChange={e => setDisplayName(e.target.value)}
                           placeholder="Your Name"
@@ -304,31 +315,16 @@ export const SyncSettingsModal: React.FC<SyncSettingsModalProps> = ({
                       </div>
                     )}
                     <div>
-                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '4px' }}>
-                        <label style={{ fontSize: '0.76rem', fontWeight: 600, color: 'var(--text-secondary)' }}>Username or Email</label>
-                        <button
-                          type="button"
-                          onClick={() => { setEmail('gulesh_creates'); setPassword('6266100'); }}
-                          style={{
-                            border: 'none',
-                            background: 'var(--lime-pale)',
-                            color: '#12241A',
-                            fontSize: '0.72rem',
-                            fontWeight: 700,
-                            padding: '2px 8px',
-                            borderRadius: 'var(--radius-pill)',
-                            cursor: 'pointer'
-                          }}
-                        >
-                          Auto-fill gulesh_creates
-                        </button>
-                      </div>
+                      <label style={{ fontSize: '0.76rem', fontWeight: 600, color: 'var(--text-secondary)', display: 'block', marginBottom: '4px' }}>
+                        Username or Email
+                      </label>
                       <input
                         type="text"
                         required
+                        autoComplete="username"
                         value={email}
                         onChange={e => setEmail(e.target.value)}
-                        placeholder="gulesh_creates or name@example.com"
+                        placeholder="Enter username or email address"
                         style={{ width: '100%', padding: '8px 12px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-medium)', background: 'var(--bg-surface-elevated)', color: 'var(--text-main)', fontSize: '0.86rem' }}
                       />
                     </div>
@@ -337,9 +333,10 @@ export const SyncSettingsModal: React.FC<SyncSettingsModalProps> = ({
                       <input
                         type="password"
                         required
+                        autoComplete={authMode === 'login' ? 'current-password' : 'new-password'}
                         value={password}
                         onChange={e => setPassword(e.target.value)}
-                        placeholder="••••••••"
+                        placeholder="Enter password"
                         style={{ width: '100%', padding: '8px 12px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-medium)', background: 'var(--bg-surface-elevated)', color: 'var(--text-main)', fontSize: '0.86rem' }}
                       />
                     </div>
