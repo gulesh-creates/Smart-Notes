@@ -1,14 +1,17 @@
 import React, { useState } from 'react';
-import { ConsistencyVault, ConsistencyDailyRecord } from '@smartnotes/shared';
+import { ConsistencyVault, ConsistencyDailyRecord, ConsistencyCalendarEvent } from '@smartnotes/shared';
 import {
   getScheduledActivitiesForDate,
   calculateDailyMetrics,
   calculateStreak,
   getLocalDateKey,
+  parseLocalDateKey,
   dbToggleActivityCompletion,
   dbSaveConsistencyVault,
   dbSetMinimumDayMode,
   dbRecordManualTime,
+  dbSaveCalendarEvent,
+  dbDeleteCalendarEvent,
   ScheduledActivityView
 } from '../../storage/consistencyDb';
 import { focusTimerEngine } from './FocusTimerEngine';
@@ -20,7 +23,9 @@ import {
   IconClock,
   IconAward,
   IconCopy,
-  IconPlus
+  IconPlus,
+  IconTrash,
+  IconClose
 } from '../icons/Icons';
 
 export interface TodayDashboardProps {
@@ -47,6 +52,80 @@ export const TodayDashboard: React.FC<TodayDashboardProps> = ({
   const [manualTimeAct, setManualTimeAct] = useState<{ id: string; title: string } | null>(null);
   const [manualMinutes, setManualMinutes] = useState<number>(15);
   const [manualNotes, setManualNotes] = useState<string>('');
+
+  // Quick Tasks state (Daily & Multi-day ad-hoc To-Dos)
+  const [quickTaskInput, setQuickTaskInput] = useState('');
+  const [quickTaskDays, setQuickTaskDays] = useState<number>(1);
+  const [isAddingQuickTask, setIsAddingQuickTask] = useState(false);
+
+  const quickTasks = (vault.calendarEvents || []).filter(
+    ev => ev.dateKey === selectedDateKey && ev.tag === 'QuickTask'
+  );
+
+  const handleAddQuickTask = async () => {
+    if (!quickTaskInput.trim()) return;
+    const daysCount = quickTaskDays;
+    let currentVaultState = vault;
+
+    for (let i = 0; i < daysCount; i++) {
+      const d = parseLocalDateKey(selectedDateKey);
+      d.setDate(d.getDate() + i);
+      const targetDateKey = getLocalDateKey(d);
+
+      currentVaultState = await dbSaveCalendarEvent({
+        dateKey: targetDateKey,
+        title: quickTaskInput.trim(),
+        tag: 'QuickTask',
+        color: '#8B5CF6'
+      }, currentVaultState);
+    }
+
+    onVaultUpdated(currentVaultState);
+    setQuickTaskInput('');
+    setIsAddingQuickTask(false);
+    setQuickTaskDays(1);
+  };
+
+  const handleToggleQuickTask = async (ev: ConsistencyCalendarEvent) => {
+    const isNowDone = !ev.notes?.startsWith('__done__');
+    const rawNotes = ev.notes ? ev.notes.replace(/^__done__:/, '').replace(/^__done__/, '') : '';
+    const updatedNotes = isNowDone ? `__done__:${rawNotes}` : (rawNotes || undefined);
+
+    // Optimistic update
+    const updatedEvents = (vault.calendarEvents || []).map(e =>
+      e.id === ev.id ? { ...e, notes: updatedNotes, updatedAt: Date.now() } : e
+    );
+    const optimisticVault: ConsistencyVault = {
+      ...vault,
+      calendarEvents: updatedEvents,
+      updatedAt: Date.now()
+    };
+    onVaultUpdated(optimisticVault);
+
+    const updated = await dbSaveCalendarEvent({
+      id: ev.id,
+      dateKey: ev.dateKey,
+      title: ev.title,
+      tag: 'QuickTask',
+      color: ev.color,
+      notes: updatedNotes
+    }, vault);
+    onVaultUpdated(updated);
+  };
+
+  const handleDeleteQuickTask = async (eventId: string) => {
+    // Optimistic delete
+    const updatedEvents = (vault.calendarEvents || []).filter(e => e.id !== eventId);
+    const optimisticVault: ConsistencyVault = {
+      ...vault,
+      calendarEvents: updatedEvents,
+      updatedAt: Date.now()
+    };
+    onVaultUpdated(optimisticVault);
+
+    const updated = await dbDeleteCalendarEvent(eventId, vault);
+    onVaultUpdated(updated);
+  };
 
   const todayKey = getLocalDateKey();
   const isToday = selectedDateKey === todayKey;
@@ -707,6 +786,248 @@ export const TodayDashboard: React.FC<TodayDashboardProps> = ({
               </div>
             </div>
           ))
+        )}
+      </div>
+
+      {/* Quick Tasks Section — Daily & Temporary To-Dos (Part 2) */}
+      <div
+        style={{
+          background: 'var(--bg-surface-elevated)',
+          border: '1px solid var(--border-subtle)',
+          borderRadius: 'var(--radius-card)',
+          padding: '20px 24px',
+          display: 'flex',
+          flexDirection: 'column',
+          gap: '14px'
+        }}
+      >
+        <div
+          style={{
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            flexWrap: 'wrap',
+            gap: '12px'
+          }}
+        >
+          <div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <h2 style={{ fontSize: '1.05rem', fontWeight: 800, color: 'var(--text-main)', margin: 0 }}>
+                Daily Quick Tasks & To-Dos
+              </h2>
+              {quickTasks.length > 0 && (
+                <span
+                  style={{
+                    fontSize: '0.72rem',
+                    fontWeight: 700,
+                    padding: '2px 8px',
+                    borderRadius: '999px',
+                    background: 'rgba(139, 92, 246, 0.15)',
+                    color: '#A78BFA',
+                    border: '1px solid rgba(139, 92, 246, 0.3)'
+                  }}
+                >
+                  {quickTasks.filter(t => t.notes?.startsWith('__done__')).length}/{quickTasks.length} done
+                </span>
+              )}
+            </div>
+            <p style={{ fontSize: '0.78rem', color: 'var(--text-tertiary)', margin: '2px 0 0 0' }}>
+              Temporary one-off tasks and errands for {isToday ? 'today' : dateFormatted} (mandir, shopping, quick fixes)
+            </p>
+          </div>
+
+          <button
+            type="button"
+            className="btn btn-sm btn-primary"
+            onClick={() => setIsAddingQuickTask(true)}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '6px',
+              fontWeight: 700,
+              fontSize: '0.82rem',
+              padding: '6px 14px'
+            }}
+          >
+            <IconPlus size={14} /> Add Quick Task
+          </button>
+        </div>
+
+        {/* Add Quick Task Input Form */}
+        {isAddingQuickTask && (
+          <div
+            style={{
+              background: 'var(--bg-canvas)',
+              border: '1px solid var(--border-medium)',
+              borderRadius: '10px',
+              padding: '14px',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '10px'
+            }}
+          >
+            <div style={{ display: 'flex', gap: '8px' }}>
+              <input
+                type="text"
+                className="input"
+                placeholder="e.g. Mandir jana hai, project review, fix camera bug..."
+                value={quickTaskInput}
+                onChange={e => setQuickTaskInput(e.target.value)}
+                autoFocus
+                onKeyDown={e => {
+                  if (e.key === 'Enter') handleAddQuickTask();
+                  if (e.key === 'Escape') {
+                    setIsAddingQuickTask(false);
+                    setQuickTaskInput('');
+                  }
+                }}
+                style={{ flex: 1, padding: '8px 12px', fontSize: '0.88rem' }}
+              />
+              <button
+                type="button"
+                className="btn btn-primary"
+                onClick={handleAddQuickTask}
+                style={{
+                  padding: '8px 16px',
+                  fontWeight: 800,
+                  fontSize: '0.84rem'
+                }}
+              >
+                Add
+              </button>
+              <button
+                type="button"
+                className="btn btn-ghost"
+                onClick={() => {
+                  setIsAddingQuickTask(false);
+                  setQuickTaskInput('');
+                }}
+                style={{ padding: '8px 10px', border: '1px solid var(--border-subtle)' }}
+                title="Cancel"
+              >
+                <IconClose size={14} />
+              </button>
+            </div>
+
+            {/* Repeat/Duration Selector (1 day, 2 days, 3 days) */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '0.78rem' }}>
+              <span style={{ color: 'var(--text-secondary)', fontWeight: 600 }}>Active for:</span>
+              {[
+                { label: 'Today only (1 day)', val: 1 },
+                { label: 'Next 2 days', val: 2 },
+                { label: 'Next 3 days', val: 3 }
+              ].map(opt => (
+                <button
+                  key={opt.val}
+                  type="button"
+                  style={{
+                    padding: '3px 10px',
+                    borderRadius: 'var(--radius-pill)',
+                    fontSize: '0.75rem',
+                    fontWeight: quickTaskDays === opt.val ? 800 : 500,
+                    border: '1px solid',
+                    borderColor: quickTaskDays === opt.val ? '#8B5CF6' : 'var(--border-subtle)',
+                    background: quickTaskDays === opt.val ? 'rgba(139, 92, 246, 0.18)' : 'transparent',
+                    color: quickTaskDays === opt.val ? '#C4B5FD' : 'var(--text-secondary)',
+                    cursor: 'pointer'
+                  }}
+                  onClick={() => setQuickTaskDays(opt.val)}
+                >
+                  {opt.label}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Tasks List */}
+        {quickTasks.length === 0 && !isAddingQuickTask ? (
+          <div
+            style={{
+              padding: '20px',
+              textAlign: 'center',
+              border: '1px dashed var(--border-subtle)',
+              borderRadius: '10px',
+              color: 'var(--text-tertiary)',
+              fontSize: '0.84rem'
+            }}
+          >
+            No temporary tasks logged for this day. Click "+ Add Quick Task" to track one-off todos.
+          </div>
+        ) : (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+            {quickTasks.map(ev => {
+              const isDone = ev.notes?.startsWith('__done__');
+              return (
+                <div
+                  key={ev.id}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '12px',
+                    padding: '10px 14px',
+                    background: 'var(--bg-canvas)',
+                    borderRadius: '8px',
+                    border: '1px solid var(--border-subtle)',
+                    transition: 'all var(--transition-fast)'
+                  }}
+                >
+                  <button
+                    type="button"
+                    onClick={() => handleToggleQuickTask(ev)}
+                    style={{
+                      width: '22px',
+                      height: '22px',
+                      borderRadius: '6px',
+                      border: isDone ? 'none' : '2px solid var(--border-medium)',
+                      background: isDone ? 'var(--lime-primary)' : 'transparent',
+                      color: 'var(--text-on-lime)',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      padding: 0,
+                      cursor: 'pointer',
+                      flexShrink: 0
+                    }}
+                    title={isDone ? 'Mark as incomplete' : 'Mark as done'}
+                  >
+                    {isDone && <span style={{ fontWeight: 800, fontSize: '0.8rem' }}>✓</span>}
+                  </button>
+
+                  <span
+                    style={{
+                      flex: 1,
+                      fontSize: '0.9rem',
+                      fontWeight: 600,
+                      color: isDone ? 'var(--text-tertiary)' : 'var(--text-main)',
+                      textDecoration: isDone ? 'line-through' : 'none'
+                    }}
+                  >
+                    {ev.title}
+                  </span>
+
+                  <button
+                    type="button"
+                    onClick={() => handleDeleteQuickTask(ev.id)}
+                    style={{
+                      background: 'transparent',
+                      border: 'none',
+                      color: 'var(--text-tertiary)',
+                      cursor: 'pointer',
+                      padding: '4px',
+                      borderRadius: '4px',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center'
+                    }}
+                    title="Delete task"
+                  >
+                    <IconTrash size={14} />
+                  </button>
+                </div>
+              );
+            })}
+          </div>
         )}
       </div>
 

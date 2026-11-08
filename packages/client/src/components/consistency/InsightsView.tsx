@@ -226,7 +226,7 @@ export const InsightsView: React.FC<InsightsViewProps> = ({ vault, onVaultUpdate
           </span>
           <div style={{ display: 'flex', alignItems: 'baseline', gap: '6px', flexWrap: 'nowrap' }}>
             <span style={{ fontSize: '1.8rem', fontWeight: 800, color: 'var(--lime-primary)', fontFamily: 'var(--font-mono)', lineHeight: 1.1 }}>
-              {activeTab === 'monthly' ? monthlyTotalMinutes : activeTab === 'daily' ? todayTotalMinutes : weeklyTotalMinutes}
+              {activeTab === 'monthly' ? Math.round(monthlyTotalMinutes * 10) / 10 : activeTab === 'daily' ? Math.round(todayTotalMinutes * 10) / 10 : Math.round(weeklyTotalMinutes * 10) / 10}
             </span>
             <span style={{ fontSize: '0.95rem', fontWeight: 700, color: 'var(--text-secondary)' }}>
               min

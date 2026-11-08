@@ -27,7 +27,7 @@ export const NoteList: React.FC<NoteListProps> = ({
 }) => {
   const [filterChip, setFilterChip] = useState<'all' | 'pinned' | 'subnotes' | 'media'>('all');
 
-  // Filter notes by search query and chip
+  // Filter notes by search query and chip, sorted by pinned then most recently updated first
   const filteredNotes = notes.filter(n => {
     // Search query filter
     if (searchQuery.trim()) {
@@ -43,6 +43,9 @@ export const NoteList: React.FC<NoteListProps> = ({
     if (filterChip === 'media') return n.assetIds && n.assetIds.length > 0;
 
     return true;
+  }).sort((a, b) => {
+    if (a.isPinned !== b.isPinned) return a.isPinned ? -1 : 1;
+    return (b.updatedAt || 0) - (a.updatedAt || 0);
   });
 
   const highlightMatches = (text: string, q: string) => {
@@ -243,7 +246,7 @@ export const NoteList: React.FC<NoteListProps> = ({
                 </div>
 
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: '0.7rem', color: 'var(--text-tertiary)', marginTop: '4px' }}>
-                  <span>{new Date(n.updatedAt).toLocaleDateString()}</span>
+                  <span>{new Date(n.updatedAt).toLocaleDateString('en-GB')}</span>
                   <div style={{ display: 'flex', gap: '4px', alignItems: 'center' }}>
                     {isSubnote && <span className="badge badge-lime">Sub-note</span>}
                     {mediaCount > 0 && <span className="badge">{mediaCount} doc{mediaCount > 1 ? 's' : ''}</span>}

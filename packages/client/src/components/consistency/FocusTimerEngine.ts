@@ -549,12 +549,30 @@ class FocusTimerEngine {
     return totalFocusedSeconds;
   }
 
+  /**
+   * Extends an existing focus session by additionalMinutes after Stage 3 checkpoint.
+   * Correctly recalculates stageDeadlineTimestamp so the heartbeat tick works properly.
+   */
   public extendSession(additionalMinutes: number = 10) {
     if (!this.current.activityId) return;
     const additionalSec = additionalMinutes * 60;
-    this.current.stageDurationSeconds += additionalSec;
-    this.current.stageRemainingSeconds += additionalSec;
-    this.current.status = 'FOCUS_RUNNING';
+    const now = Date.now();
+
+    // Recalculate deadline from now + extension so the heartbeat correctly counts down
+    const newDeadline = now + additionalSec * 1000;
+
+    this.current = {
+      ...this.current,
+      status: 'FOCUS_RUNNING',
+      stage: 3,                              // Keep in stage 3 (extension of deep focus)
+      stageDurationSeconds: additionalSec,
+      stageRemainingSeconds: additionalSec,
+      stageElapsedSeconds: 0,
+      stageStartTimestamp: now,
+      stageDeadlineTimestamp: newDeadline,
+      lastPersistedTimestamp: now
+    };
+
     this.startHeartbeat();
     this.notify();
   }

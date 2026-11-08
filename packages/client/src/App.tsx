@@ -160,6 +160,28 @@ export const App: React.FC = () => {
     }, 3500);
   };
 
+  const cloudSyncStateRef = useRef(cloudSyncState);
+  useEffect(() => {
+    cloudSyncStateRef.current = cloudSyncState;
+  }, [cloudSyncState]);
+
+  // PWA Exit & Cloud Sync Confirmation Guard (Part 6)
+  useEffect(() => {
+    const handleBeforeUnload = (e: BeforeUnloadEvent) => {
+      const isStandalone = window.matchMedia('(display-mode: standalone)').matches;
+      if (isStandalone || cloudSyncStateRef.current === 'pending') {
+        e.preventDefault();
+        e.returnValue = 'Are you sure you want to exit Smart Notes? Please ensure all your recent notes and consistency data are synced to the cloud.';
+        return e.returnValue;
+      }
+    };
+
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    return () => {
+      window.removeEventListener('beforeunload', handleBeforeUnload);
+    };
+  }, []);
+
   // 1. Initial Load & Firebase Auth Persistence
   useEffect(() => {
     let unsubscribeFirestore: (() => void) | null = null;

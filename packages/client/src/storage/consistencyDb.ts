@@ -800,11 +800,12 @@ export async function dbSaveWeeklyReflection(
   return dbSaveConsistencyVault({ ...vault, reflections: updatedReflections, updatedAt: now });
 }
 
-// Calendar Events Helpers
+// Calendar Events Helpers — accept optional currentVault to avoid stale reads
 export async function dbSaveCalendarEvent(
-  eventData: Omit<ConsistencyCalendarEvent, 'id' | 'createdAt' | 'updatedAt'> & { id?: string }
+  eventData: Omit<ConsistencyCalendarEvent, 'id' | 'createdAt' | 'updatedAt'> & { id?: string },
+  currentVault?: ConsistencyVault
 ): Promise<ConsistencyVault> {
-  const vault = await dbGetConsistencyVault();
+  const vault = currentVault ?? await dbGetConsistencyVault();
   const now = Date.now();
   const eventId = eventData.id || `cev-${now}-${Math.random().toString(36).substring(2, 7)}`;
   const currentEvents = vault.calendarEvents || [];
@@ -836,8 +837,8 @@ export async function dbSaveCalendarEvent(
   });
 }
 
-export async function dbDeleteCalendarEvent(eventId: string): Promise<ConsistencyVault> {
-  const vault = await dbGetConsistencyVault();
+export async function dbDeleteCalendarEvent(eventId: string, currentVault?: ConsistencyVault): Promise<ConsistencyVault> {
+  const vault = currentVault ?? await dbGetConsistencyVault();
   const now = Date.now();
   const currentEvents = vault.calendarEvents || [];
   const filtered = currentEvents.filter(e => e.id !== eventId);

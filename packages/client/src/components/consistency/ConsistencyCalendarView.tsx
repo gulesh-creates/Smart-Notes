@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import {
   ConsistencyVault,
   ConsistencyCalendarEvent
@@ -124,7 +124,7 @@ export const ConsistencyCalendarView: React.FC<ConsistencyCalendarViewProps> = (
       color: TAG_COLORS[eventTag] || '#10B981'
     };
 
-    const updated = await dbSaveCalendarEvent(eventPayload);
+    const updated = await dbSaveCalendarEvent(eventPayload, vault);
     onVaultUpdated(updated);
     setShowAddForm(false);
     setEditingEvent(null);
@@ -133,7 +133,7 @@ export const ConsistencyCalendarView: React.FC<ConsistencyCalendarViewProps> = (
   };
 
   const handleDeleteEvent = async (eventId: string) => {
-    const updated = await dbDeleteCalendarEvent(eventId);
+    const updated = await dbDeleteCalendarEvent(eventId, vault);
     onVaultUpdated(updated);
     if (editingEvent?.id === eventId) {
       setEditingEvent(null);
@@ -175,6 +175,15 @@ export const ConsistencyCalendarView: React.FC<ConsistencyCalendarViewProps> = (
     const dk = `${nextYear}-${String(nextMonth + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
     gridCells.push({ dayNum: d, dateKey: dk, isCurrentMonth: false });
   }
+
+  // Memoized Daily Metrics cache for high-performance rendering of grid cells
+  const metricsCache = useMemo(() => {
+    const cache = new Map<string, ReturnType<typeof calculateDailyMetrics>>();
+    gridCells.forEach(cell => {
+      cache.set(cell.dateKey, calculateDailyMetrics(vault, cell.dateKey));
+    });
+    return cache;
+  }, [vault, year, month, daysInMonth, firstDayOfWeek]);
 
   // Selected date metrics if modal is open
   const selectedDateMetrics = selectedDateKey ? calculateDailyMetrics(vault, selectedDateKey) : null;
@@ -303,7 +312,7 @@ export const ConsistencyCalendarView: React.FC<ConsistencyCalendarViewProps> = (
       >
         {gridCells.map(cell => {
           const isToday = cell.dateKey === todayKey;
-          const metrics = calculateDailyMetrics(vault, cell.dateKey);
+          const metrics = metricsCache.get(cell.dateKey) || calculateDailyMetrics(vault, cell.dateKey);
           const cellEvents = eventsByDate.get(cell.dateKey) || [];
           const hasActivity = metrics.actualMinutes > 0 || metrics.completedCount > 0;
 

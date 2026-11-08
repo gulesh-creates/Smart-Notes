@@ -26,6 +26,7 @@ export const FocusTimerView: React.FC<FocusTimerViewProps> = ({
     selectedActivityId || snapshot.activityId || (vault.activities[0]?.id ?? '')
   );
   const [currentTone, setCurrentTone] = useState<string>(() => getSavedTimerTone());
+  const [isSaving, setIsSaving] = useState(false);
 
   useEffect(() => {
     return focusTimerEngine.subscribe(setSnapshot);
@@ -82,8 +83,13 @@ export const FocusTimerView: React.FC<FocusTimerViewProps> = ({
   };
 
   const handleFinish = async () => {
-    await focusTimerEngine.finishSession();
-    if (onSessionFinished) onSessionFinished();
+    setIsSaving(true);
+    try {
+      await focusTimerEngine.finishSession();
+      if (onSessionFinished) onSessionFinished();
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   return (
@@ -414,11 +420,14 @@ export const FocusTimerView: React.FC<FocusTimerViewProps> = ({
                 fontWeight: 700,
                 padding: '12px 20px',
                 borderRadius: 'var(--radius-pill)',
-                border: '1px solid var(--border-medium)'
+                border: '1px solid var(--border-medium)',
+                opacity: isSaving ? 0.65 : 1,
+                cursor: isSaving ? 'not-allowed' : 'pointer'
               }}
               onClick={handleFinish}
+              disabled={isSaving}
             >
-              Finish Session & Save
+              {isSaving ? 'Saving...' : 'Finish Session & Save'}
             </button>
           </div>
         </div>
@@ -519,11 +528,14 @@ export const FocusTimerView: React.FC<FocusTimerViewProps> = ({
                   fontWeight: 600,
                   fontSize: '0.92rem',
                   padding: '12px 20px',
-                  borderRadius: 'var(--radius-pill)'
+                  borderRadius: 'var(--radius-pill)',
+                  opacity: isSaving ? 0.65 : 1,
+                  cursor: isSaving ? 'not-allowed' : 'pointer'
                 }}
                 onClick={handleFinish}
+                disabled={isSaving}
               >
-                Finish & Save ({Math.round((snapshot.accumulatedFocusedSeconds + snapshot.stageElapsedSeconds) / 60)}m)
+                {isSaving ? 'Saving...' : `Finish & Save (${Math.round((snapshot.accumulatedFocusedSeconds + snapshot.stageElapsedSeconds) / 60)}m)`}
               </button>
             </>
           )}

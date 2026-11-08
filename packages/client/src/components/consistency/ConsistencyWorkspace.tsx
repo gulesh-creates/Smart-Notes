@@ -71,16 +71,52 @@ export const ConsistencyWorkspace: React.FC<ConsistencyWorkspaceProps> = ({
   if (loading || !vault) {
     return (
       <div
+        className="consistency-module-workspace"
         style={{
           display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
+          flexDirection: 'column',
           height: '100%',
-          color: 'var(--text-tertiary)',
-          fontSize: '0.9rem'
+          width: '100%',
+          background: 'var(--bg-canvas)'
         }}
       >
-        Loading Consistency Tracker...
+        <div
+          style={{
+            background: 'var(--bg-surface)',
+            borderBottom: '1px solid var(--border-subtle)',
+            padding: '12px 20px',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '12px'
+          }}
+        >
+          <div style={{ width: '28px', height: '28px', borderRadius: '8px', background: 'var(--bg-surface-subtle)' }} />
+          <div style={{ height: '20px', width: '100px', background: 'var(--bg-surface-subtle)', borderRadius: '4px' }} />
+        </div>
+        <div
+          style={{
+            flex: 1,
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+            justifyContent: 'center',
+            gap: '12px',
+            color: 'var(--text-tertiary)',
+            fontSize: '0.88rem'
+          }}
+        >
+          <div
+            style={{
+              width: '28px',
+              height: '28px',
+              border: '3px solid var(--lime-primary)',
+              borderTopColor: 'transparent',
+              borderRadius: '50%',
+              animation: 'spin 0.8s linear infinite'
+            }}
+          />
+          <span>Loading Consistency Tracker...</span>
+        </div>
       </div>
     );
   }
@@ -102,17 +138,19 @@ export const ConsistencyWorkspace: React.FC<ConsistencyWorkspaceProps> = ({
         style={{
           background: 'var(--bg-surface)',
           borderBottom: '1px solid var(--border-subtle)',
-          padding: '0 24px',
+          padding: '0 16px',
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'space-between',
           flexShrink: 0,
           position: 'sticky',
           top: 0,
-          zIndex: 100
+          zIndex: 100,
+          overflowX: 'auto',
+          scrollbarWidth: 'none'
         }}
       >
-        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', minWidth: 'max-content' }}>
           <div
             style={{
               width: '28px',
@@ -122,17 +160,26 @@ export const ConsistencyWorkspace: React.FC<ConsistencyWorkspaceProps> = ({
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
-              color: 'var(--text-on-lime)'
+              color: 'var(--text-on-lime)',
+              flexShrink: 0
             }}
           >
             <IconTarget size={16} />
           </div>
-          <span style={{ fontWeight: 800, fontSize: '1rem', color: 'var(--text-main)', marginRight: '16px' }}>
+          <span style={{ fontWeight: 800, fontSize: '0.98rem', color: 'var(--text-main)', marginRight: '12px' }}>
             Consistency
           </span>
 
-          {/* Navigation Tabs */}
-          <nav style={{ display: 'flex', gap: '4px' }}>
+          {/* Navigation Tabs — Horizontal scrollable on mobile */}
+          <nav
+            style={{
+              display: 'flex',
+              gap: '2px',
+              overflowX: 'auto',
+              scrollbarWidth: 'none',
+              WebkitOverflowScrolling: 'touch'
+            }}
+          >
             {[
               { id: 'today', label: 'Today', icon: IconClock },
               { id: 'priorities', label: 'Priorities', icon: IconTarget },
@@ -152,14 +199,16 @@ export const ConsistencyWorkspace: React.FC<ConsistencyWorkspaceProps> = ({
                     display: 'flex',
                     alignItems: 'center',
                     gap: '6px',
-                    padding: '12px 14px',
+                    padding: '12px 12px',
                     border: 'none',
                     background: 'transparent',
                     color: isActive ? 'var(--text-main)' : 'var(--text-secondary)',
                     fontWeight: isActive ? 800 : 600,
-                    fontSize: '0.86rem',
+                    fontSize: '0.84rem',
                     borderBottom: isActive ? '2px solid var(--lime-primary)' : '2px solid transparent',
                     cursor: 'pointer',
+                    whiteSpace: 'nowrap',
+                    flexShrink: 0,
                     transition: 'all var(--transition-fast)'
                   }}
                   onClick={() => setActiveTab(tab.id as ConsistencyTab)}
