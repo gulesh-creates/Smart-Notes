@@ -143,6 +143,10 @@ export const App: React.FC = () => {
 
   const saveTimerRef = useRef<NodeJS.Timeout | null>(null);
   const consistencySyncTimerRef = useRef<any>(null);
+  // Ref to track items that have been created/deleted locally but not yet confirmed by Firestore
+  // This prevents the Firestore real-time listener from overwriting pending local mutations
+  const localPendingItemsRef = useRef<Map<string, Item>>(new Map());
+  const localDeletedItemIdsRef = useRef<Set<string>>(new Set());
 
   const handleSyncConsistencyVault = useCallback((updatedVault: ConsistencyVault) => {
     const strk = calculateStreak(updatedVault);
@@ -318,7 +322,39 @@ export const App: React.FC = () => {
                     const regularItems = remoteItems.filter(i => !isSystemItem(i) && !isSampleOrPrototypeItem(i));
                     await dbSaveItemsBatch(regularItems);
                     const all = (await dbGetAllItems(true)).filter(i => !isSystemItem(i) && !isSampleOrPrototypeItem(i));
-                    setItems(all);
+
+                    // MERGE: Apply locally pending mutations on top of Firestore data to prevent UI flicker.
+                    // If user just created/deleted an item and Firestore hasn't confirmed it yet,
+                    // we preserve the local pending state instead of overwriting with stale remote data.
+                    setItems(prev => {
+                      const merged = new Map<string, Item>(all.map(i => [i.id, i]));
+
+                      // Restore any locally-created items that Firestore hasn't echoed back yet
+                      localPendingItemsRef.current.forEach((pendingItem, id) => {
+                        const inFirestore = all.find(r => r.id === id);
+                        if (!inFirestore) {
+                          // Not confirmed by Firestore yet - keep the local pending item
+                          merged.set(id, pendingItem);
+                        } else {
+                          // Firestore confirmed it - remove from pending tracker
+                          localPendingItemsRef.current.delete(id);
+                        }
+                      });
+
+                      // Ensure locally-deleted items remain deleted even if Firestore echoes them back
+                      localDeletedItemIdsRef.current.forEach(deletedId => {
+                        const inFirestore = merged.get(deletedId);
+                        if (inFirestore && !inFirestore.isDeleted) {
+                          // Firestore hasn't processed the delete yet - keep showing as deleted
+                          merged.set(deletedId, { ...inFirestore, isDeleted: true });
+                        } else if (inFirestore && inFirestore.isDeleted) {
+                          // Firestore confirmed the delete - remove from pending delete tracker
+                          localDeletedItemIdsRef.current.delete(deletedId);
+                        }
+                      });
+
+                      return Array.from(merged.values());
+                    });
                     setCloudSyncState('synced');
                   }
                 },
@@ -623,13 +659,16 @@ export const App: React.FC = () => {
   const persistItem = async (item: Item, queueForSync = true) => {
     await dbSaveItem(item, queueForSync);
     if (currentUser?.id) {
-      try {
-        await syncItemToFirestore(currentUser.id, item);
-        setCloudSyncState('synced');
-      } catch (err) {
-        console.warn('Firestore sync notice:', err);
-        setCloudSyncState('pending');
-      }
+      // Fire-and-forget: do NOT await Firestore sync here.
+      // Awaiting causes the Firestore onSnapshot to fire BEFORE setItems() runs in the caller,
+      // making the UI appear unresponsive (note appears only after app restart).
+      // The outbox queue + triggerSync handles guaranteed delivery.
+      syncItemToFirestore(currentUser.id, item)
+        .then(() => setCloudSyncState('synced'))
+        .catch(err => {
+          console.warn('Firestore sync notice:', err);
+          setCloudSyncState('pending');
+        });
     }
   };
 
@@ -710,6 +749,8 @@ export const App: React.FC = () => {
     };
 
     await persistItem(newNote, true);
+    // Track this item as locally-pending so the Firestore echo won't overwrite it
+    localPendingItemsRef.current.set(newId, newNote);
     setItems(prev => [...prev, newNote]);
     setSelectedNoteId(newId);
     showToast('New note created');
@@ -756,6 +797,8 @@ export const App: React.FC = () => {
       };
 
       await persistItem(newFolder, true);
+      // Track this folder as locally-pending so the Firestore echo won't overwrite it
+      localPendingItemsRef.current.set(newFolderId, newFolder);
       setItems(prev => [...prev, newFolder]);
       setSelectedFolderId(newFolderId);
       setSpecialFilter('all');
@@ -817,6 +860,8 @@ export const App: React.FC = () => {
     };
 
     await persistItem(childNote, true);
+    // Track this child note as locally-pending so the Firestore echo won't overwrite it
+    localPendingItemsRef.current.set(newId, childNote);
     setItems(prev => [...prev, childNote]);
     setSelectedNoteId(newId);
     showToast('Nested child note created');
@@ -857,14 +902,14 @@ export const App: React.FC = () => {
     const descIds = getDescendantIds(items, itemId);
     const allIdsToDelete = [itemId, ...descIds];
 
-    for (const id of allIdsToDelete) {
-      const item = items.find(i => i.id === id);
-      await dbMarkItemDeleted(id);
-      if (currentUser?.id) {
-        await deleteItemInFirestore(currentUser.id, id, item).catch(() => { });
-      }
-    }
+    // Track all deleted IDs locally BEFORE async operations so Firestore echo doesn't resurrect them
+    allIdsToDelete.forEach(id => {
+      localDeletedItemIdsRef.current.add(id);
+      // Remove from pending creates if it was just created
+      localPendingItemsRef.current.delete(id);
+    });
 
+    // Optimistic UI update FIRST - immediate visual feedback
     setItems(prev =>
       prev.map(i =>
         allIdsToDelete.includes(i.id) ? { ...i, isDeleted: true, updatedAt: Date.now() } : i
@@ -876,6 +921,15 @@ export const App: React.FC = () => {
         i => i.kind === 'note' && !i.isDeleted && !allIdsToDelete.includes(i.id)
       );
       setSelectedNoteId(remainingNotes.length > 0 ? remainingNotes[0].id : null);
+    }
+
+    // Async persistence after UI is already updated
+    for (const id of allIdsToDelete) {
+      const item = items.find(i => i.id === id);
+      await dbMarkItemDeleted(id);
+      if (currentUser?.id) {
+        await deleteItemInFirestore(currentUser.id, id, item).catch(() => { });
+      }
     }
 
     showToast('Moved to Trash');
