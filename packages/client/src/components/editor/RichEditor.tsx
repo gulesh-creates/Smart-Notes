@@ -10,6 +10,7 @@ import {
 import { renderPdfPageToCanvas } from '../../pdf/pdfViewer';
 import { AnnotationOverlay } from '../annotations/AnnotationOverlay';
 import { dbGetAsset, StoredAssetRecord } from '../../storage/db';
+import { ImprovementPromptsTab } from './ImprovementPromptsTab';
 
 export interface RichEditorProps {
   note: Item;
@@ -52,6 +53,11 @@ export const RichEditor: React.FC<RichEditorProps> = ({
   const [pdfPages, setPdfPages] = useState<Record<string, { page: number; total: number; zoom: number }>>({});
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const [importType, setImportType] = useState<'image' | 'pdf'>('image');
+  const [editorTab, setEditorTab] = useState<'content' | 'improvements'>('content');
+
+  // Count active improvement prompts in this note
+  const pendingPromptsCount = (note.blocks || []).filter(b => b.type === 'task_item' && !b.checked).length;
+  const totalPromptsCount = (note.blocks || []).filter(b => b.type === 'task_item').length;
 
   // Load binary assets from IndexedDB
   useEffect(() => {
@@ -243,89 +249,118 @@ export const RichEditor: React.FC<RichEditorProps> = ({
       )}
 
       {/* Formatting Toolbar - Single sleek swipeable row on mobile */}
-      <div
-        className="editor-formatting-toolbar"
-        style={{
-          padding: isMobileView ? '8px 10px' : '6px 20px',
-          borderBottom: '1px solid var(--border-subtle)',
-          background: 'var(--bg-surface-elevated)',
-          display: 'flex',
-          alignItems: 'center',
-          gap: '5px',
-          flexWrap: isMobileView ? 'nowrap' : 'wrap',
-          overflowX: isMobileView ? 'auto' : 'visible',
-          WebkitOverflowScrolling: 'touch',
-          scrollbarWidth: 'none',
-          msOverflowStyle: 'none',
-          flexShrink: 0
-        }}
-      >
-        <button type="button" className="btn btn-sm" onClick={() => exec('formatBlock', '<h1>')} title="Heading 1" style={{ minWidth: '32px', height: '32px', padding: '0 8px', flexShrink: 0 }}>
-          H1
-        </button>
-        <button type="button" className="btn btn-sm" onClick={() => exec('formatBlock', '<h2>')} title="Heading 2" style={{ minWidth: '32px', height: '32px', padding: '0 8px', flexShrink: 0 }}>
-          H2
-        </button>
-        <button type="button" className="btn btn-sm" onClick={() => exec('formatBlock', '<h3>')} title="Heading 3" style={{ minWidth: '32px', height: '32px', padding: '0 8px', flexShrink: 0 }}>
-          H3
-        </button>
-        <button type="button" className="btn btn-sm" onClick={() => exec('formatBlock', '<p>')} title="Paragraph" style={{ minWidth: '32px', height: '32px', padding: '0 8px', flexShrink: 0 }}>
-          P
-        </button>
+      {editorTab === 'content' ? (
+        <div
+          className="editor-formatting-toolbar"
+          style={{
+            padding: isMobileView ? '8px 10px' : '6px 20px',
+            borderBottom: '1px solid var(--border-subtle)',
+            background: 'var(--bg-surface-elevated)',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '5px',
+            flexWrap: isMobileView ? 'nowrap' : 'wrap',
+            overflowX: isMobileView ? 'auto' : 'visible',
+            WebkitOverflowScrolling: 'touch',
+            scrollbarWidth: 'none',
+            msOverflowStyle: 'none',
+            flexShrink: 0
+          }}
+        >
+          <button type="button" className="btn btn-sm" onClick={() => exec('formatBlock', '<h1>')} title="Heading 1" style={{ minWidth: '32px', height: '32px', padding: '0 8px', flexShrink: 0 }}>
+            H1
+          </button>
+          <button type="button" className="btn btn-sm" onClick={() => exec('formatBlock', '<h2>')} title="Heading 2" style={{ minWidth: '32px', height: '32px', padding: '0 8px', flexShrink: 0 }}>
+            H2
+          </button>
+          <button type="button" className="btn btn-sm" onClick={() => exec('formatBlock', '<h3>')} title="Heading 3" style={{ minWidth: '32px', height: '32px', padding: '0 8px', flexShrink: 0 }}>
+            H3
+          </button>
+          <button type="button" className="btn btn-sm" onClick={() => exec('formatBlock', '<p>')} title="Paragraph" style={{ minWidth: '32px', height: '32px', padding: '0 8px', flexShrink: 0 }}>
+            P
+          </button>
 
-        <span style={{ width: '1px', height: '18px', background: 'var(--border-subtle)', margin: '0 2px', flexShrink: 0 }} />
+          <span style={{ width: '1px', height: '18px', background: 'var(--border-subtle)', margin: '0 2px', flexShrink: 0 }} />
 
-        <button type="button" className="btn btn-icon btn-sm" onClick={() => exec('bold')} title="Bold" style={{ minWidth: '32px', height: '32px', flexShrink: 0 }}>
-          <strong>B</strong>
-        </button>
-        <button type="button" className="btn btn-icon btn-sm" onClick={() => exec('italic')} title="Italic" style={{ minWidth: '32px', height: '32px', flexShrink: 0 }}>
-          <em>I</em>
-        </button>
-        <button type="button" className="btn btn-icon btn-sm" onClick={() => exec('underline')} title="Underline" style={{ minWidth: '32px', height: '32px', flexShrink: 0 }}>
-          <u>U</u>
-        </button>
-        <button type="button" className="btn btn-icon btn-sm" onClick={() => exec('strikeThrough')} title="Strikethrough" style={{ minWidth: '32px', height: '32px', flexShrink: 0 }}>
-          <s>S</s>
-        </button>
+          <button type="button" className="btn btn-icon btn-sm" onClick={() => exec('bold')} title="Bold" style={{ minWidth: '32px', height: '32px', flexShrink: 0 }}>
+            <strong>B</strong>
+          </button>
+          <button type="button" className="btn btn-icon btn-sm" onClick={() => exec('italic')} title="Italic" style={{ minWidth: '32px', height: '32px', flexShrink: 0 }}>
+            <em>I</em>
+          </button>
+          <button type="button" className="btn btn-icon btn-sm" onClick={() => exec('underline')} title="Underline" style={{ minWidth: '32px', height: '32px', flexShrink: 0 }}>
+            <u>U</u>
+          </button>
+          <button type="button" className="btn btn-icon btn-sm" onClick={() => exec('strikeThrough')} title="Strikethrough" style={{ minWidth: '32px', height: '32px', flexShrink: 0 }}>
+            <s>S</s>
+          </button>
 
-        <span style={{ width: '1px', height: '18px', background: 'var(--border-subtle)', margin: '0 2px', flexShrink: 0 }} />
+          <span style={{ width: '1px', height: '18px', background: 'var(--border-subtle)', margin: '0 2px', flexShrink: 0 }} />
 
-        <button type="button" className="btn btn-icon btn-sm" onClick={() => exec('insertUnorderedList')} title="Bullet List" style={{ minWidth: '32px', height: '32px', flexShrink: 0 }}>
-          <IconListBullet size={16} />
-        </button>
-        <button type="button" className="btn btn-icon btn-sm" onClick={() => exec('insertOrderedList')} title="Numbered List" style={{ minWidth: '32px', height: '32px', flexShrink: 0 }}>
-          <IconListNumber size={16} />
-        </button>
-        <button type="button" className="btn btn-icon btn-sm" onClick={insertChecklist} title="Interactive Checklist" style={{ minWidth: '32px', height: '32px', flexShrink: 0 }}>
-          <IconChecklist size={16} />
-        </button>
-        <button type="button" className="btn btn-icon btn-sm" onClick={() => exec('formatBlock', '<blockquote>')} title="Blockquote" style={{ minWidth: '32px', height: '32px', flexShrink: 0 }}>
-          <IconQuote size={16} />
-        </button>
-        <button type="button" className="btn btn-icon btn-sm" onClick={() => exec('formatBlock', '<pre>')} title="Code Block" style={{ minWidth: '32px', height: '32px', flexShrink: 0 }}>
-          <IconCode size={16} />
-        </button>
+          <button type="button" className="btn btn-icon btn-sm" onClick={() => exec('insertUnorderedList')} title="Bullet List" style={{ minWidth: '32px', height: '32px', flexShrink: 0 }}>
+            <IconListBullet size={16} />
+          </button>
+          <button type="button" className="btn btn-icon btn-sm" onClick={() => exec('insertOrderedList')} title="Numbered List" style={{ minWidth: '32px', height: '32px', flexShrink: 0 }}>
+            <IconListNumber size={16} />
+          </button>
+          <button type="button" className="btn btn-icon btn-sm" onClick={insertChecklist} title="Interactive Checklist" style={{ minWidth: '32px', height: '32px', flexShrink: 0 }}>
+            <IconChecklist size={16} />
+          </button>
+          <button type="button" className="btn btn-icon btn-sm" onClick={() => exec('formatBlock', '<blockquote>')} title="Blockquote" style={{ minWidth: '32px', height: '32px', flexShrink: 0 }}>
+            <IconQuote size={16} />
+          </button>
+          <button type="button" className="btn btn-icon btn-sm" onClick={() => exec('formatBlock', '<pre>')} title="Code Block" style={{ minWidth: '32px', height: '32px', flexShrink: 0 }}>
+            <IconCode size={16} />
+          </button>
 
-        <span style={{ width: '1px', height: '18px', background: 'var(--border-subtle)', margin: '0 2px', flexShrink: 0 }} />
+          <span style={{ width: '1px', height: '18px', background: 'var(--border-subtle)', margin: '0 2px', flexShrink: 0 }} />
 
-        <button type="button" className="btn btn-icon btn-sm" onClick={() => exec('undo')} title="Undo" style={{ minWidth: '32px', height: '32px', flexShrink: 0 }}>
-          <IconUndo size={16} />
-        </button>
-        <button type="button" className="btn btn-icon btn-sm" onClick={() => exec('redo')} title="Redo" style={{ minWidth: '32px', height: '32px', flexShrink: 0 }}>
-          <IconRedo size={16} />
-        </button>
+          <button type="button" className="btn btn-icon btn-sm" onClick={() => exec('undo')} title="Undo" style={{ minWidth: '32px', height: '32px', flexShrink: 0 }}>
+            <IconUndo size={16} />
+          </button>
+          <button type="button" className="btn btn-icon btn-sm" onClick={() => exec('redo')} title="Redo" style={{ minWidth: '32px', height: '32px', flexShrink: 0 }}>
+            <IconRedo size={16} />
+          </button>
 
-        <span style={{ width: '1px', height: '18px', background: 'var(--border-subtle)', margin: '0 2px', flexShrink: 0 }} />
+          <span style={{ width: '1px', height: '18px', background: 'var(--border-subtle)', margin: '0 2px', flexShrink: 0 }} />
 
-        <button type="button" className="btn btn-sm" onClick={() => triggerFileUpload('image')} title="Insert Image Attachment" style={{ height: '32px', padding: '0 10px', flexShrink: 0, gap: '4px' }}>
-          <IconImage size={15} />
-          Image
-        </button>
-        <button type="button" className="btn btn-sm" onClick={() => triggerFileUpload('pdf')} title="Insert PDF Document" style={{ height: '32px', padding: '0 10px', flexShrink: 0, gap: '4px' }}>
-          <IconPdf size={15} />
-          PDF
-        </button>
-      </div>
+          <button type="button" className="btn btn-sm" onClick={() => triggerFileUpload('image')} title="Insert Image Attachment" style={{ height: '32px', padding: '0 10px', flexShrink: 0, gap: '4px' }}>
+            <IconImage size={15} />
+            Image
+          </button>
+          <button type="button" className="btn btn-sm" onClick={() => triggerFileUpload('pdf')} title="Insert PDF Document" style={{ height: '32px', padding: '0 10px', flexShrink: 0, gap: '4px' }}>
+            <IconPdf size={15} />
+            PDF
+          </button>
+        </div>
+      ) : (
+        <div
+          className="editor-formatting-toolbar"
+          style={{
+            padding: '8px 20px',
+            borderBottom: '1px solid var(--border-subtle)',
+            background: 'var(--bg-surface-elevated)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            fontSize: '0.82rem',
+            color: 'var(--text-secondary)'
+          }}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <span style={{ color: 'var(--lime-primary)', fontWeight: 800 }}>⚡ Improvement & AI Prompts Mode</span>
+            <span style={{ color: 'var(--text-tertiary)' }}>· Write prompts, copy them with 1 click & tick items as completed</span>
+          </div>
+          <button
+            type="button"
+            className="btn btn-sm"
+            onClick={() => setEditorTab('content')}
+            style={{ fontSize: '0.76rem', padding: '2px 10px' }}
+          >
+            ← Switch to Note Document
+          </button>
+        </div>
+      )}
 
       {/* Scrollable Document Canvas */}
       <div
@@ -399,6 +434,82 @@ export const RichEditor: React.FC<RichEditorProps> = ({
           <div style={{ fontSize: '0.74rem', color: 'var(--text-tertiary)', marginBottom: isMobileView ? '16px' : '24px', paddingBottom: '10px', borderBottom: '1px solid var(--border-subtle)' }}>
             Last modified {new Date(note.updatedAt).toLocaleString()} · Version {note.version}
           </div>
+
+          {/* Note Tab Switcher: Document vs Improvements & AI Prompts */}
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '6px',
+              marginBottom: '22px',
+              borderBottom: '1.5px solid var(--border-subtle)',
+              paddingBottom: '2px'
+            }}
+          >
+            <button
+              type="button"
+              onClick={() => setEditorTab('content')}
+              style={{
+                padding: '8px 16px',
+                background: 'transparent',
+                border: 'none',
+                borderBottom: editorTab === 'content' ? '2.5px solid var(--lime-primary)' : '2.5px solid transparent',
+                color: editorTab === 'content' ? 'var(--text-main)' : 'var(--text-secondary)',
+                fontWeight: editorTab === 'content' ? 800 : 600,
+                fontSize: '0.86rem',
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '6px',
+                marginBottom: '-2px',
+                transition: 'all 0.15s ease'
+              }}
+            >
+              <span>📝</span> Note Document
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setEditorTab('improvements')}
+              style={{
+                padding: '8px 16px',
+                background: 'transparent',
+                border: 'none',
+                borderBottom: editorTab === 'improvements' ? '2.5px solid var(--lime-primary)' : '2.5px solid transparent',
+                color: editorTab === 'improvements' ? 'var(--text-main)' : 'var(--text-secondary)',
+                fontWeight: editorTab === 'improvements' ? 800 : 600,
+                fontSize: '0.86rem',
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '6px',
+                marginBottom: '-2px',
+                transition: 'all 0.15s ease'
+              }}
+            >
+              <span>⚡</span> Improvements & Prompts
+              {totalPromptsCount > 0 && (
+                <span
+                  className="badge"
+                  style={{
+                    background: pendingPromptsCount > 0 ? 'var(--lime-primary)' : 'var(--bg-surface-subtle)',
+                    color: pendingPromptsCount > 0 ? '#000000' : 'var(--text-secondary)',
+                    fontSize: '0.68rem',
+                    padding: '2px 8px',
+                    fontWeight: 800,
+                    marginLeft: '4px'
+                  }}
+                >
+                  {pendingPromptsCount > 0 ? `${pendingPromptsCount} pending` : `${totalPromptsCount}`}
+                </span>
+              )}
+            </button>
+          </div>
+
+          {editorTab === 'improvements' ? (
+            <ImprovementPromptsTab note={note} onUpdateNote={onUpdateNote} isMobile={isMobileView} />
+          ) : (
+            <>
 
           {/* Rich Content Body */}
           <div
@@ -506,7 +617,9 @@ export const RichEditor: React.FC<RichEditorProps> = ({
               )}
             </div>
           </div>
-        </div>
+        </>
+      )}
+    </div>
       </div>
     </div>
   );

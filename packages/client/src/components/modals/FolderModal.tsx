@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Item } from '@smartnotes/shared';
 import { IconFolder, IconClose, IconCheck } from '../icons/Icons';
+import { FolderLocationSelector } from '../common/FolderLocationSelector';
 
 export interface FolderColorOption {
   id: string;
@@ -44,6 +45,7 @@ export const FolderModal: React.FC<FolderModalProps> = ({
 }) => {
   const [title, setTitle] = useState('');
   const [selectedColor, setSelectedColor] = useState(FOLDER_COLORS[1].hex); // Default emerald green
+  const [targetParentId, setTargetParentId] = useState<string | null>(parentId);
   const inputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -51,17 +53,19 @@ export const FolderModal: React.FC<FolderModalProps> = ({
       if (mode === 'edit' && folderToEdit) {
         setTitle(folderToEdit.title);
         setSelectedColor(folderToEdit.color || FOLDER_COLORS[1].hex);
+        setTargetParentId(folderToEdit.parentId || null);
       } else {
         setTitle('');
         setSelectedColor(FOLDER_COLORS[1].hex);
+        setTargetParentId(parentId);
       }
       setTimeout(() => inputRef.current?.focus(), 80);
     }
-  }, [isOpen, mode, folderToEdit]);
+  }, [isOpen, mode, folderToEdit, parentId]);
 
   if (!isOpen) return null;
 
-  const parentFolder = parentId ? items.find(i => i.id === parentId) : null;
+  const parentFolder = targetParentId ? items.find(i => i.id === targetParentId) : null;
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -69,7 +73,7 @@ export const FolderModal: React.FC<FolderModalProps> = ({
     onSubmit({
       title: cleanTitle,
       color: selectedColor,
-      parentId: mode === 'create' ? parentId : undefined
+      parentId: targetParentId
     });
     onClose();
   };
@@ -179,6 +183,15 @@ export const FolderModal: React.FC<FolderModalProps> = ({
               }}
             />
           </div>
+
+          {/* Folder Location Selector (Root vs Inside a Folder or Subfolder) */}
+          <FolderLocationSelector
+            items={items}
+            selectedFolderId={targetParentId}
+            onSelectFolderId={setTargetParentId}
+            excludeId={folderToEdit?.id}
+            label={mode === 'create' ? 'Location: Kis folder ke andar create karna hai?' : 'Parent Folder Location'}
+          />
 
           {/* Color Theme Selector */}
           <div>

@@ -11,12 +11,12 @@ export interface TreeRailProps {
   items: Item[];
   selectedFolderId: string | null;
   selectedNoteId: string | null;
-  specialFilter: 'all' | 'pinned' | 'recent' | 'trash' | 'github' | 'consistency';
+  specialFilter: 'all' | 'projects' | 'pinned' | 'recent' | 'trash' | 'github' | 'consistency';
   githubCount?: number;
   consistencyStreak?: number;
   onSelectFolder: (folderId: string | null) => void;
   onSelectNote: (noteId: string) => void;
-  onSelectSpecialFilter: (filter: 'all' | 'pinned' | 'recent' | 'trash' | 'github' | 'consistency') => void;
+  onSelectSpecialFilter: (filter: 'all' | 'projects' | 'pinned' | 'recent' | 'trash' | 'github' | 'consistency') => void;
   onCreateFolder: (parentId: string | null) => void;
   onRenameFolder: (folderId: string) => void;
   onCreateNote: (parentId: string | null) => void;
@@ -72,6 +72,7 @@ export const TreeRail: React.FC<TreeRailProps> = ({
   };
 
   const activeNotes = items.filter(i => i.kind === 'note' && !i.isDeleted && !isSampleOrPrototypeItem(i));
+  const activeFolders = items.filter(i => i.kind === 'folder' && !i.isDeleted && !isSampleOrPrototypeItem(i));
   const pinnedNotes = activeNotes.filter(n => n.isPinned);
   const trashedItems = items.filter(i => i.isDeleted && !isSampleOrPrototypeItem(i));
 
@@ -307,6 +308,25 @@ export const TreeRail: React.FC<TreeRailProps> = ({
           <IconNote size={16} />
           All Notes
           <span className="badge" style={{ marginLeft: 'auto' }}>{activeNotes.length}</span>
+        </button>
+
+        <button
+          type="button"
+          className="btn"
+          style={{
+            justifyContent: 'flex-start',
+            border: 'none',
+            background: specialFilter === 'projects' ? 'var(--bg-surface-subtle)' : 'transparent',
+            color: specialFilter === 'projects' ? 'var(--text-main)' : 'var(--text-secondary)',
+            fontWeight: specialFilter === 'projects' ? 700 : 500,
+            padding: '7px 10px',
+            borderRadius: 'var(--radius-sm)'
+          }}
+          onClick={() => onSelectSpecialFilter('projects')}
+        >
+          <IconFolder size={16} color={specialFilter === 'projects' ? 'var(--lime-primary)' : 'currentColor'} />
+          Projects
+          <span className="badge" style={{ marginLeft: 'auto' }}>{activeFolders.length}</span>
         </button>
 
         <button

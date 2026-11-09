@@ -27,7 +27,9 @@ import { MoveItemModal } from './components/modals/MoveItemModal';
 import { ConflictModal } from './components/modals/ConflictModal';
 import { SyncSettingsModal } from './components/modals/SyncSettingsModal';
 import { FolderModal } from './components/modals/FolderModal';
+import { NoteModal } from './components/modals/NoteModal';
 import { ConfirmDeleteModal } from './components/modals/ConfirmDeleteModal';
+import { WorkspaceWelcome } from './components/workspace/WorkspaceWelcome';
 import { isSampleOrPrototypeItem } from './sampleData';
 import {
   dbGetAllItems,
@@ -103,7 +105,7 @@ export const App: React.FC = () => {
   const [items, setItems] = useState<Item[]>([]);
   const [selectedFolderId, setSelectedFolderId] = useState<string | null>(null);
   const [selectedNoteId, setSelectedNoteId] = useState<string | null>(null);
-  const [specialFilter, setSpecialFilter] = useState<'all' | 'pinned' | 'recent' | 'trash' | 'github' | 'consistency'>('all');
+  const [specialFilter, setSpecialFilter] = useState<'all' | 'projects' | 'pinned' | 'recent' | 'trash' | 'github' | 'consistency'>('all');
   const [githubCredentials, setGithubCredentials] = useState<GitHubCredential[]>([]);
   const [consistencyStreak, setConsistencyStreak] = useState<number>(0);
   const [searchQuery, setSearchQuery] = useState<string>('');
@@ -132,6 +134,10 @@ export const App: React.FC = () => {
   const [folderModalMode, setFolderModalMode] = useState<'create' | 'edit'>('create');
   const [folderModalParentId, setFolderModalParentId] = useState<string | null>(null);
   const [folderToEdit, setFolderToEdit] = useState<Item | null>(null);
+
+  // Note Create Modal (with Location / Folder Picker)
+  const [isNoteModalOpen, setIsNoteModalOpen] = useState<boolean>(false);
+  const [noteModalParentId, setNoteModalParentId] = useState<string | null>(null);
 
   // Delete Confirmation Modal
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState<boolean>(false);
@@ -224,12 +230,9 @@ export const App: React.FC = () => {
         } catch { }
 
         setItems(storedItems);
-        const firstNote = storedItems.find(i => i.kind === 'note' && !i.isDeleted);
-        if (firstNote) {
-          setSelectedNoteId(firstNote.id);
-        } else {
-          setSelectedNoteId(null);
-        }
+        // On startup / initial load: do not auto-open any note or expand folders
+        setSelectedNoteId(null);
+        setSelectedFolderId(null);
 
         // Load GitHub credentials from local IndexedDB
         const storedCreds = await dbGetGitHubCredentials();
@@ -727,15 +730,20 @@ export const App: React.FC = () => {
     }, 350);
   };
 
-  // Item Creation Handlers
-  const handleCreateNote = async (parentId?: string | null) => {
+  // Item Creation Handlers (with Location & Folder Picker Modals)
+  const handleOpenCreateNoteModal = (parentId?: string | null) => {
     const pId = parentId !== undefined ? parentId : selectedFolderId;
+    setNoteModalParentId(pId || null);
+    setIsNoteModalOpen(true);
+  };
+
+  const handleNoteModalSubmit = async ({ title, parentId }: { title: string; parentId: string | null }) => {
     const newId = `note-${Date.now()}`;
     const newNote: Item = {
       id: newId,
       kind: 'note',
-      title: 'Untitled Note',
-      parentId: pId || null,
+      title: title || 'Untitled Note',
+      parentId: parentId || null,
       orderIndex: items.length,
       version: 1,
       createdAt: Date.now(),
@@ -745,16 +753,24 @@ export const App: React.FC = () => {
       contentHtml: '<p></p>',
       plainText: '',
       assetIds: [],
-      mediaAnnotations: []
+      mediaAnnotations: [],
+      blocks: []
     };
 
     await persistItem(newNote, true);
-    // Track this item as locally-pending so the Firestore echo won't overwrite it
     localPendingItemsRef.current.set(newId, newNote);
     setItems(prev => [...prev, newNote]);
     setSelectedNoteId(newId);
-    showToast('New note created');
+    if (parentId) {
+      setSelectedFolderId(parentId);
+      setSpecialFilter('all');
+    }
+    showToast(`Note "${newNote.title}" created`);
     if (authToken) triggerSync();
+  };
+
+  const handleCreateNote = async (parentId?: string | null) => {
+    handleOpenCreateNoteModal(parentId);
   };
 
   // Folder Modal Handlers (Create & Customize/Rename)
@@ -1091,6 +1107,14 @@ export const App: React.FC = () => {
       return base.filter(i => i.isPinned);
     }
 
+    if (specialFilter === 'projects') {
+      if (selectedFolderId) {
+        return base.filter(i => i.parentId === selectedFolderId);
+      }
+      // Show all project notes (notes nested within folders)
+      return base.filter(i => i.parentId !== null);
+    }
+
     if (specialFilter === 'recent') {
       return [...base].sort((a, b) => b.updatedAt - a.updatedAt);
     }
@@ -1107,13 +1131,15 @@ export const App: React.FC = () => {
   const noteListTitle =
     specialFilter === 'pinned'
       ? 'Pinned Notes'
-      : specialFilter === 'recent'
-        ? 'Recent Notes'
-        : specialFilter === 'trash'
-          ? 'Trash'
-          : currentFolder
-            ? currentFolder.title
-            : 'All Notes';
+      : specialFilter === 'projects'
+        ? (currentFolder ? currentFolder.title : 'Project Notes')
+        : specialFilter === 'recent'
+          ? 'Recent Notes'
+          : specialFilter === 'trash'
+            ? 'Trash'
+            : currentFolder
+              ? currentFolder.title
+              : 'All Notes';
 
   // Toggle mobile/desktop view
   const isMobile = isMobileScreen || previewMobileMode;
@@ -1391,13 +1417,18 @@ export const App: React.FC = () => {
                       isMobile={isMobile}
                     />
                   ) : (
-                    <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', flexDirection: 'column', gap: '14px', color: 'var(--text-tertiary)' }}>
-                      <IconNote size={48} />
-                      <p style={{ fontWeight: 600 }}>No note selected</p>
-                      <button type="button" className="btn btn-primary btn-sm" onClick={() => handleCreateNote(selectedFolderId)}>
-                        + Create New Note
-                      </button>
-                    </div>
+                    <WorkspaceWelcome
+                      items={items}
+                      onOpenCreateNoteModal={handleOpenCreateNoteModal}
+                      onOpenCreateFolderModal={handleOpenCreateFolderModal}
+                      onSelectNote={(noteId) => setSelectedNoteId(noteId)}
+                      onSelectFolder={(folderId) => {
+                        setSelectedFolderId(folderId);
+                        setSpecialFilter('all');
+                      }}
+                      onSelectSpecialFilter={setSpecialFilter}
+                      isMobile={isMobile}
+                    />
                   )}
                 </main>
               </>
@@ -1480,6 +1511,15 @@ export const App: React.FC = () => {
           setFolderToEdit(null);
         }}
         onSubmit={handleFolderModalSubmit}
+      />
+
+      {/* MODAL: CREATE NOTE WITH LOCATION / FOLDER PICKER */}
+      <NoteModal
+        isOpen={isNoteModalOpen}
+        defaultParentId={noteModalParentId}
+        items={items}
+        onClose={() => setIsNoteModalOpen(false)}
+        onSubmit={handleNoteModalSubmit}
       />
 
       {/* MODAL: SAFE CONFIRMATION FOR MOVING TO TRASH */}

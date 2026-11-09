@@ -33,7 +33,8 @@
     "perMachine": false,
     "createDesktopShortcut": true,
     "createStartMenuShortcut": true,
-    "shortcutName": "Smart Notes"
+    "shortcutName": "Smart Notes",
+    "differentialPackage": false
   }
 }
 
