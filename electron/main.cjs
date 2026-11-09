@@ -1,6 +1,13 @@
-const { app, BrowserWindow, shell } = require('electron');
+const { app, BrowserWindow, shell, dialog, ipcMain } = require('electron');
 const path = require('path');
 const fs = require('fs');
+
+let isQuitting = false;
+
+ipcMain.on('app-quit', () => {
+  isQuitting = true;
+  app.quit();
+});
 
 function createWindow() {
   const iconPath = path.join(__dirname, 'icon.png');
@@ -15,9 +22,31 @@ function createWindow() {
     webPreferences: {
       nodeIntegration: false,
       contextIsolation: true,
-      sandbox: true
+      sandbox: false,
+      preload: path.join(__dirname, 'preload.cjs')
     },
     autoHideMenuBar: true
+  });
+
+  // Handle window close confirmation
+  win.on('close', (e) => {
+    if (!isQuitting) {
+      e.preventDefault();
+      const choice = dialog.showMessageBoxSync(win, {
+        type: 'question',
+        buttons: ['Yes, Exit', 'Cancel'],
+        defaultId: 0,
+        cancelId: 1,
+        title: 'Exit Smart Notes',
+        message: 'Are you sure you want to exit Smart Notes?',
+        detail: 'Please ensure all your recent notes and consistency data are synced to the cloud.',
+        noLink: true
+      });
+      if (choice === 0) {
+        isQuitting = true;
+        app.quit();
+      }
+    }
   });
 
   // Open external links in default browser
@@ -51,4 +80,3 @@ app.on('window-all-closed', () => {
     app.quit();
   }
 });
-

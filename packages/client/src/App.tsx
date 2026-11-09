@@ -29,6 +29,7 @@ import { SyncSettingsModal } from './components/modals/SyncSettingsModal';
 import { FolderModal } from './components/modals/FolderModal';
 import { NoteModal } from './components/modals/NoteModal';
 import { ConfirmDeleteModal } from './components/modals/ConfirmDeleteModal';
+import { ExitConfirmModal } from './components/modals/ExitConfirmModal';
 import { WorkspaceWelcome } from './components/workspace/WorkspaceWelcome';
 import { isSampleOrPrototypeItem } from './sampleData';
 import {
@@ -143,6 +144,9 @@ export const App: React.FC = () => {
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState<boolean>(false);
   const [itemToDelete, setItemToDelete] = useState<Item | null>(null);
 
+  // Exit Confirmation Modal
+  const [isExitModalOpen, setIsExitModalOpen] = useState<boolean>(false);
+
   // User & Sync Auth
   const [currentUser, setCurrentUser] = useState<UserAccount | null>(null);
   const [authToken, setAuthToken] = useState<string | null>(null);
@@ -182,15 +186,16 @@ export const App: React.FC = () => {
     cloudSyncStateRef.current = cloudSyncState;
   }, [cloudSyncState]);
 
-  // PWA Exit & Cloud Sync Confirmation Guard (Part 6)
+  // PWA & Browser Exit Guard
   useEffect(() => {
     const handleBeforeUnload = (e: BeforeUnloadEvent) => {
-      const isStandalone = window.matchMedia('(display-mode: standalone)').matches;
-      if (isStandalone || cloudSyncStateRef.current === 'pending') {
-        e.preventDefault();
-        e.returnValue = 'Are you sure you want to exit Smart Notes? Please ensure all your recent notes and consistency data are synced to the cloud.';
-        return e.returnValue;
+      // In Electron environment, Electron's native dialog handles win.on('close') cleanly
+      if ((window as any).electronAPI?.isElectron) {
+        return;
       }
+      e.preventDefault();
+      e.returnValue = 'Are you sure you want to exit Smart Notes? Please ensure all your recent notes and consistency data are synced to the cloud.';
+      return e.returnValue;
     };
 
     window.addEventListener('beforeunload', handleBeforeUnload);
@@ -1128,6 +1133,16 @@ export const App: React.FC = () => {
   };
 
   const currentFolder = items.find(i => i.id === selectedFolderId);
+  const parentFolder = currentFolder?.parentId
+    ? items.find(i => i.id === currentFolder.parentId)
+    : (selectedFolderId ? null : undefined);
+
+  const currentSubfolders = selectedFolderId
+    ? items.filter(i => i.kind === 'folder' && i.parentId === selectedFolderId && !i.isDeleted && !isSampleOrPrototypeItem(i))
+    : specialFilter === 'projects'
+      ? items.filter(i => i.kind === 'folder' && i.parentId === null && !i.isDeleted && !isSampleOrPrototypeItem(i))
+      : [];
+
   const noteListTitle =
     specialFilter === 'pinned'
       ? 'Pinned Notes'
@@ -1301,6 +1316,18 @@ export const App: React.FC = () => {
               >
                 <IconMonitor size={16} />
               </button>
+
+              {/* Exit Application Button */}
+              <button
+                type="button"
+                className="btn btn-icon btn-sm"
+                style={{ marginLeft: '4px', color: 'var(--text-secondary)' }}
+                onClick={() => setIsExitModalOpen(true)}
+                title="Exit Smart Notes"
+                aria-label="Exit Application"
+              >
+                <IconClose size={16} />
+              </button>
             </div>
           </header>
 
@@ -1328,6 +1355,7 @@ export const App: React.FC = () => {
                   onSelectFolder={(folderId) => {
                     setSelectedFolderId(folderId);
                     setSpecialFilter('all');
+                    setSelectedNoteId(null);
                   }}
                   onSelectNote={(noteId) => {
                     setSelectedNoteId(noteId);
@@ -1336,6 +1364,7 @@ export const App: React.FC = () => {
                   onSelectSpecialFilter={(filter) => {
                     setSpecialFilter(filter);
                     setSelectedFolderId(null);
+                    setSelectedNoteId(null);
                   }}
                   onCreateFolder={handleCreateFolder}
                   onRenameFolder={handleOpenRenameFolderModal}
@@ -1379,11 +1408,19 @@ export const App: React.FC = () => {
                       title={noteListTitle}
                       folderColor={currentFolder?.color}
                       notes={getNotesForList()}
+                      subfolders={currentSubfolders}
+                      items={items}
+                      parentFolder={parentFolder}
                       selectedNoteId={selectedNoteId}
                       searchQuery={searchQuery}
                       onSearchChange={setSearchQuery}
                       onSelectNote={(noteId) => setSelectedNoteId(noteId)}
+                      onSelectFolder={(folderId) => {
+                        setSelectedFolderId(folderId);
+                        setSelectedNoteId(null);
+                      }}
                       onCreateNote={() => handleCreateNote(selectedFolderId)}
+                      onCreateFolder={() => handleOpenCreateFolderModal(selectedFolderId)}
                       onDeleteNote={handleRequestDelete}
                     />
                   </section>
@@ -1532,6 +1569,13 @@ export const App: React.FC = () => {
           setItemToDelete(null);
         }}
         onConfirmDelete={handleConfirmDelete}
+      />
+
+      {/* MODAL: EXIT SMART NOTES CONFIRMATION */}
+      <ExitConfirmModal
+        isOpen={isExitModalOpen}
+        cloudSyncState={cloudSyncState}
+        onClose={() => setIsExitModalOpen(false)}
       />
 
       {/* Floating Active Focus Timer Bar across all views */}
