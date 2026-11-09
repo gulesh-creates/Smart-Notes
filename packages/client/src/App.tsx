@@ -63,6 +63,9 @@ import {
   firebaseAuthenticate,
   firebaseSignOut,
   AUTHORIZED_EMAIL,
+  AUTHORIZED_EMAILS,
+  isAuthorizedEmail,
+  SHARED_VAULT_ID,
   syncItemToFirestore,
   deleteItemInFirestore,
   fetchItemsFromFirestore,
@@ -244,32 +247,32 @@ export const App: React.FC = () => {
           unsubscribeAuth = onAuthStateChanged(auth, async (fbUser) => {
             if (fbUser) {
               const userEmail = (fbUser.email || '').toLowerCase().trim();
-              if (userEmail !== AUTHORIZED_EMAIL.toLowerCase()) {
+              if (!isAuthorizedEmail(userEmail)) {
                 console.warn(`Unauthorized login attempt by ${userEmail}. Signing out.`);
                 await firebaseSignOut();
                 setCurrentUser(null);
                 setAuthToken('');
                 setCloudSyncState('offline');
-                showToast(`Access Denied: Only ${AUTHORIZED_EMAIL} is authorized.`);
+                showToast(`Access Denied: Only authorized accounts (${AUTHORIZED_EMAILS.join(', ')}) are allowed.`);
                 return;
               }
 
               const userAccount: UserAccount = {
-                id: fbUser.uid,
+                id: SHARED_VAULT_ID,
                 email: userEmail,
                 displayName: fbUser.displayName || 'Gulesh Patel',
                 createdAt: Date.now()
               };
-              setAuthToken(fbUser.uid);
+              setAuthToken(SHARED_VAULT_ID);
               setCurrentUser(userAccount);
-              await dbSetSetting('auth_token', fbUser.uid);
+              await dbSetSetting('auth_token', SHARED_VAULT_ID);
               await dbSetSetting('auth_user', JSON.stringify(userAccount));
               setCloudSyncState('synced');
 
-              // Attach real-time Firestore synchronization listener for items & GitHub vault
+              // Attach real-time Firestore synchronization listener for items & GitHub vault on the SHARED VAULT
               if (unsubscribeFirestore) unsubscribeFirestore();
               unsubscribeFirestore = subscribeToUserItems(
-                fbUser.uid,
+                SHARED_VAULT_ID,
                 async (remoteItems) => {
                   if (remoteItems && remoteItems.length > 0) {
                     // 1. Check if there is a sys-github-credentials sync item in remote items
@@ -301,13 +304,13 @@ export const App: React.FC = () => {
                       const parsedVault = parseConsistencySyncItem(consistencySyncDoc);
                       if (parsedVault) {
                         const localVault = await dbGetConsistencyVault();
-                        const mergedVault = reconcileConsistencyVaults(localVault, parsedVault);
-                        await dbSaveConsistencyVault(mergedVault);
-                        const strk = calculateStreak(mergedVault);
-                        setConsistencyStreak(strk.currentStreak);
-                        if (!parsedVault.updatedAt || mergedVault.updatedAt > parsedVault.updatedAt) {
-                          await syncConsistencyVaultToFirestore(fbUser.uid, mergedVault).catch(() => { });
+                        if (!localVault || (parsedVault.updatedAt || 0) >= (localVault.updatedAt || 0)) {
+                          const mergedVault = reconcileConsistencyVaults(localVault, parsedVault);
+                          await dbSaveConsistencyVault(mergedVault);
+                          const strk = calculateStreak(mergedVault);
+                          setConsistencyStreak(strk.currentStreak);
                         }
+                        // NEVER echo syncConsistencyVaultToFirestore here! We just received it from Firestore.
                       }
                     }
 
@@ -327,7 +330,7 @@ export const App: React.FC = () => {
               // Attach real-time GitHub credentials listener (for direct collection if permitted)
               if (unsubscribeGitHub) unsubscribeGitHub();
               unsubscribeGitHub = subscribeToGitHubCredentials(
-                fbUser.uid,
+                SHARED_VAULT_ID,
                 async (remoteCreds) => {
                   if (remoteCreds) {
                     const local = await dbGetGitHubCredentials();
@@ -344,15 +347,29 @@ export const App: React.FC = () => {
 
               // Merge local items with Firestore to guarantee no offline work is lost
               try {
+                // If user has old items under personal UID, migrate them to SHARED_VAULT_ID
+                if (fbUser.uid && fbUser.uid !== SHARED_VAULT_ID) {
+                  try {
+                    const legacyItems = await fetchItemsFromFirestore(fbUser.uid);
+                    if (legacyItems && legacyItems.length > 0) {
+                      for (const leg of legacyItems) {
+                        await syncItemToFirestore(SHARED_VAULT_ID, leg).catch(() => {});
+                      }
+                    }
+                  } catch (legErr) {
+                    // Ignore if personal UID has no items
+                  }
+                }
+
                 const localItems = (await dbGetAllItems(true)).filter(i => !isSystemItem(i) && !isSampleOrPrototypeItem(i));
                 for (const item of localItems) {
-                  await syncItemToFirestore(fbUser.uid, item).catch(() => { });
+                  await syncItemToFirestore(SHARED_VAULT_ID, item).catch(() => { });
                 }
                 const localVault = await dbGetConsistencyVault();
                 if (localVault) {
-                  await syncConsistencyVaultToFirestore(fbUser.uid, localVault).catch(() => { });
+                  await syncConsistencyVaultToFirestore(SHARED_VAULT_ID, localVault).catch(() => { });
                 }
-                const remote = await fetchItemsFromFirestore(fbUser.uid);
+                const remote = await fetchItemsFromFirestore(SHARED_VAULT_ID);
                 if (remote && remote.length > 0) {
                   // Check if remote items include sys-github-credentials
                   const ghDoc = remote.find(i => i.id === SYS_GITHUB_CREDS_ID || i.title === '__sys_github_credentials__');
@@ -385,9 +402,6 @@ export const App: React.FC = () => {
                       await dbSaveConsistencyVault(mergedVault);
                       const strk = calculateStreak(mergedVault);
                       setConsistencyStreak(strk.currentStreak);
-                      if (!parsedVault.updatedAt || mergedVault.updatedAt > parsedVault.updatedAt) {
-                        await syncConsistencyVaultToFirestore(fbUser.uid, mergedVault).catch(() => { });
-                      }
                     }
                   }
                   const regular = remote.filter(i => !isSystemItem(i) && !isSampleOrPrototypeItem(i));
@@ -399,17 +413,17 @@ export const App: React.FC = () => {
                 console.warn('Initial cloud merge notice:', mergeErr);
               }
 
-              // Guaranteed push of local GitHub credentials to Firestore so Vercel gets them immediately
+              // Guaranteed push of local GitHub credentials to Firestore
               try {
                 const localCreds = await dbGetGitHubCredentials();
                 const tombstones = await dbGetGitHubDeletedTombstones();
                 const vaultUpdatedAt = await dbGetGitHubVaultUpdatedAt();
 
-                await syncGitHubVaultToFirestore(fbUser.uid, localCreds, vaultUpdatedAt);
+                await syncGitHubVaultToFirestore(SHARED_VAULT_ID, localCreds, vaultUpdatedAt);
                 for (const cred of localCreds) {
-                  await syncGitHubCredentialToFirestore(fbUser.uid, cred).catch(() => { });
+                  await syncGitHubCredentialToFirestore(SHARED_VAULT_ID, cred).catch(() => { });
                 }
-                const remoteCreds = await fetchGitHubCredentialsFromFirestore(fbUser.uid);
+                const remoteCreds = await fetchGitHubCredentialsFromFirestore(SHARED_VAULT_ID);
                 if (remoteCreds) {
                   const reconciled = reconcileGitHubCredentials(localCreds, remoteCreds, tombstones);
                   await dbSetSetting('github_credentials', reconciled);
@@ -419,11 +433,11 @@ export const App: React.FC = () => {
                 console.warn('Initial GitHub cloud merge notice:', credMergeErr);
               }
 
-              // Guaranteed push of local Consistency vault to Firestore so Vercel & Mobile get it immediately
+              // Guaranteed push of local Consistency vault to Firestore
               try {
                 const localVault = await dbGetConsistencyVault();
                 if (localVault) {
-                  await syncConsistencyVaultToFirestore(fbUser.uid, localVault);
+                  await syncConsistencyVaultToFirestore(SHARED_VAULT_ID, localVault);
                 }
               } catch (cPushErr) {
                 console.warn('Initial Consistency cloud push notice:', cPushErr);
@@ -432,7 +446,7 @@ export const App: React.FC = () => {
               // Push any pending outbox mutations
               const mutations = await dbGetOutboxMutations();
               if (mutations.length > 0) {
-                const applied = await pushMutationsToFirestore(fbUser.uid, mutations);
+                const applied = await pushMutationsToFirestore(SHARED_VAULT_ID, mutations);
                 if (applied.length > 0) {
                   await dbRemoveOutboxMutations(applied);
                 }
@@ -567,7 +581,7 @@ export const App: React.FC = () => {
     showToast('Signed out of cloud sync.');
   };
 
-  // Background Cloud Sync Loop
+  // Background Cloud Sync Loop: Flushes offline outbox mutations to Firestore
   const triggerSync = useCallback(async () => {
     if (!currentUser?.id) {
       setCloudSyncState('offline');
@@ -575,43 +589,14 @@ export const App: React.FC = () => {
     }
 
     try {
-      setCloudSyncState('pending');
       const mutations = await dbGetOutboxMutations();
 
-      // 1. Push pending offline mutations to Cloud Firestore
+      // Push pending offline mutations to Cloud Firestore
       if (mutations.length > 0) {
+        setCloudSyncState('pending');
         const appliedOpIds = await pushMutationsToFirestore(currentUser.id, mutations);
         if (appliedOpIds.length > 0) {
           await dbRemoveOutboxMutations(appliedOpIds);
-        }
-      }
-
-      // 2. Fetch latest items from Firestore to guarantee complete multi-device consistency
-      const remoteItems = await fetchItemsFromFirestore(currentUser.id);
-      if (remoteItems && remoteItems.length > 0) {
-        // Reconcile Consistency Vault if present in remote
-        const consistencyDoc = remoteItems.find(i => i.id === SYS_CONSISTENCY_VAULT_ID || i.title === '__sys_consistency_data__');
-        if (consistencyDoc) {
-          const parsedVault = parseConsistencySyncItem(consistencyDoc);
-          if (parsedVault) {
-            const localVault = await dbGetConsistencyVault();
-            const mergedVault = reconcileConsistencyVaults(localVault, parsedVault);
-            await dbSaveConsistencyVault(mergedVault);
-            const strk = calculateStreak(mergedVault);
-            setConsistencyStreak(strk.currentStreak);
-            if (!parsedVault.updatedAt || mergedVault.updatedAt > parsedVault.updatedAt) {
-              await syncConsistencyVaultToFirestore(currentUser.id, mergedVault).catch(() => { });
-            }
-          }
-        }
-        await dbSaveItemsBatch(remoteItems.filter(i => !isSystemItem(i) && !isSampleOrPrototypeItem(i)));
-        const all = (await dbGetAllItems(true)).filter(i => !isSystemItem(i) && !isSampleOrPrototypeItem(i));
-        setItems(all);
-      } else {
-        // If remote has no items or remote consistency doc missing, push local vault
-        const localVault = await dbGetConsistencyVault();
-        if (localVault) {
-          await syncConsistencyVaultToFirestore(currentUser.id, localVault).catch(() => { });
         }
       }
 
@@ -623,8 +608,15 @@ export const App: React.FC = () => {
   }, [currentUser]);
 
   useEffect(() => {
-    const interval = setInterval(triggerSync, 15000);
-    return () => clearInterval(interval);
+    // Flush outbox periodically every 60s and whenever coming back online
+    // (Real-time cloud updates are pushed instantly by subscribeToUserItems WebSocket)
+    const interval = setInterval(triggerSync, 60000);
+    const handleOnline = () => triggerSync();
+    window.addEventListener('online', handleOnline);
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener('online', handleOnline);
+    };
   }, [triggerSync]);
 
   // Persistent Database & Cloud Sync Helper

@@ -257,7 +257,7 @@ export const SyncSettingsModal: React.FC<SyncSettingsModalProps> = ({
                       </span>
                     </div>
                     <p style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', margin: '0 0 16px 0', lineHeight: 1.5 }}>
-                      This Smart Notes workspace is private and strictly restricted. Only the authorized account <strong>gulesh.patel.csit@gmail.com</strong> can log in and access this data.
+                      This Smart Notes workspace is private and strictly restricted. Authorized accounts (<strong>gulesh.patel.csit@gmail.com</strong> & <strong>gulesh788@gmail.com</strong>) share the exact same cloud backup data across all your PC and mobile devices.
                     </p>
 
                     {authError && (

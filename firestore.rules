@@ -1,11 +1,21 @@
 rules_version = '2';
 
 // ============================================================================
-// Assumed Data Model
+// Assumed Data Model & Access Control Architecture
 // ============================================================================
 //
-// 1. User Profile Document: /users/{userId}
-//    Document ID: {userId} (matches Firebase Auth UID)
+// 1. Multi-Account Shared Vault:
+//    Authorized Owners:
+//      - gulesh.patel.csit@gmail.com
+//      - gulesh788@gmail.com
+//    Shared Vault Workspace IDs:
+//      - 'gulesh_shared_vault'
+//      - 'shared_vault'
+//    Both accounts possess full access to the shared vault workspace path (/users/{sharedVaultId}/...).
+//    Users also retain access to their individual UID vaults (/users/{request.auth.uid}/...).
+//
+// 2. User Profile Document: /users/{userId}
+//    Document ID: {userId} (Firebase Auth UID or shared vault ID)
 //    Fields:
 //      - id: string (optional, 1..128 chars; if present must match userId)
 //      - email: string (required, valid email address, 5..254 chars)
@@ -14,7 +24,7 @@ rules_version = '2';
 //      - updatedAt: number (optional, epoch milliseconds > 0)
 //      - photoURL: string (optional, 1..500 chars)
 //
-// 2. User Items Subcollection: /users/{userId}/items/{itemId}
+// 3. User Items Subcollection: /users/{userId}/items/{itemId}
 //    Document ID: {itemId} (string matching item.id, 1..128 chars)
 //    Fields:
 //      - id: string (required, immutable, 1..128 chars, matches itemId)
@@ -34,9 +44,9 @@ rules_version = '2';
 //      - version: number (required revision counter >= 1)
 //      - assetIds: list (required, max 100 referenced asset IDs)
 //      - mediaAnnotations: list (required, max 100 media annotation records)
-//      - userId: string (optional, if present must match request.auth.uid)
+//      - userId: string (optional, if present must match request.auth.uid or 'gulesh_shared_vault' or 'shared_vault')
 //
-// 3. User Binary Assets Subcollection: /users/{userId}/assets/{assetId}
+// 4. User Binary Assets Subcollection: /users/{userId}/assets/{assetId}
 //    Document ID: {assetId} (string matching asset.id, 1..128 chars)
 //    Fields:
 //      - id: string (required, immutable, 1..128 chars, matches assetId)
@@ -47,9 +57,9 @@ rules_version = '2';
 //      - createdAt: number (required, immutable epoch milliseconds > 0)
 //      - syncState: string (optional, enum: 'local' | 'synced' | 'pending_upload')
 //      - storagePath: string (optional, 1..500 chars)
-//      - userId: string (optional, if present must match request.auth.uid)
+//      - userId: string (optional, if present must match request.auth.uid or 'gulesh_shared_vault' or 'shared_vault')
 //
-// 4. User GitHub Credentials Subcollection: /users/{userId}/github_credentials/{credId}
+// 5. User GitHub Credentials Subcollection: /users/{userId}/github_credentials/{credId}
 //    Document ID: {credId} (string matching cred.id, 1..128 chars)
 //    Fields:
 //      - id: string (required, immutable, 1..128 chars, matches credId)
@@ -57,9 +67,11 @@ rules_version = '2';
 //      - token: string (required, 1..500 chars)
 //      - label: string (optional, 0..100 chars)
 //      - expiresAt: number or null (optional/nullable, epoch milliseconds > 0 if number, or null)
+//      - isDeleted: bool (optional tombstone flag)
+//      - deletedAt: number or null (optional, epoch milliseconds > 0 if number)
 //      - createdAt: number (required, immutable epoch milliseconds > 0)
 //      - updatedAt: number (required, epoch milliseconds > 0)
-//      - userId: string (optional, if present must match request.auth.uid)
+//      - userId: string (optional, if present must match request.auth.uid or 'gulesh_shared_vault' or 'shared_vault')
 //
 // ============================================================================
 
@@ -67,7 +79,7 @@ service cloud.firestore {
   match /databases/{database}/documents {
 
     // ------------------------------------------------------------------------
-    // Core Helper Functions
+    // Core Helper Functions & Authorization
     // ------------------------------------------------------------------------
 
     // Verify whether the request is from an authenticated user
@@ -75,9 +87,36 @@ service cloud.firestore {
       return request.auth != null;
     }
 
-    // Verify whether the caller owns the user-scoped path
+    // Check if the authenticated user has an authorized owner email
+    function isAuthorizedOwnerEmail() {
+      return isAuthenticated() &&
+        'email' in request.auth.token &&
+        request.auth.token.email is string &&
+        request.auth.token.email.lower() in [
+          'gulesh.patel.csit@gmail.com',
+          'gulesh788@gmail.com'
+        ];
+    }
+
+    // Check if the target userId is one of the authorized shared vault workspace identifiers
+    function isSharedVaultId(userId) {
+      return userId in ['gulesh_shared_vault', 'shared_vault'];
+    }
+
+    // Verify whether the caller owns the user-scoped path or is an authorized owner accessing the shared vault
     function isOwner(userId) {
-      return isAuthenticated() && request.auth.uid == userId;
+      return isAuthenticated() && (
+        request.auth.uid == userId ||
+        (isAuthorizedOwnerEmail() && isSharedVaultId(userId))
+      );
+    }
+
+    // Validate optional userId field against caller UID or authorized shared vault identifiers
+    function isValidOwnerUserId(data) {
+      return !('userId' in data) || (
+        data.userId is string &&
+        (data.userId == request.auth.uid || isSharedVaultId(data.userId))
+      );
     }
 
     // Validate email format and bounded length
@@ -162,7 +201,7 @@ service cloud.firestore {
         data.version is number && data.version >= 1 &&
         isValidList(data.assetIds, 100) &&
         isValidList(data.mediaAnnotations, 100) &&
-        (!('userId' in data) || (data.userId is string && data.userId == request.auth.uid));
+        isValidOwnerUserId(data);
     }
 
     function areImmutableItemFieldsUnchanged() {
@@ -192,7 +231,7 @@ service cloud.firestore {
         data.createdAt is number && data.createdAt > 0 &&
         (!('syncState' in data) || (data.syncState is string && data.syncState in ['local', 'synced', 'pending_upload'])) &&
         isValidOptionalString(data, 'storagePath', 1, 500) &&
-        (!('userId' in data) || (data.userId is string && data.userId == request.auth.uid));
+        isValidOwnerUserId(data);
     }
 
     function areImmutableAssetFieldsUnchanged() {
@@ -212,16 +251,18 @@ service cloud.firestore {
         ]) &&
         data.keys().hasOnly([
           'id', 'username', 'token', 'label', 'expiresAt',
-          'createdAt', 'updatedAt', 'userId'
+          'createdAt', 'updatedAt', 'userId', 'isDeleted', 'deletedAt'
         ]) &&
         data.id is string && data.id == credId && data.id.size() >= 1 && data.id.size() <= 128 &&
         isValidString(data.username, 1, 100) &&
         isValidString(data.token, 1, 500) &&
         isValidOptionalString(data, 'label', 0, 100) &&
         (!('expiresAt' in data) || data.expiresAt == null || (data.expiresAt is number && data.expiresAt > 0)) &&
+        (!('isDeleted' in data) || data.isDeleted is bool) &&
+        (!('deletedAt' in data) || data.deletedAt == null || (data.deletedAt is number && data.deletedAt > 0)) &&
         data.createdAt is number && data.createdAt > 0 &&
         data.updatedAt is number && data.updatedAt > 0 &&
-        (!('userId' in data) || (data.userId is string && data.userId == request.auth.uid));
+        isValidOwnerUserId(data);
     }
 
     function areImmutableGitHubCredentialFieldsUnchanged() {
@@ -239,7 +280,7 @@ service cloud.firestore {
       allow read, write: if false;
     }
 
-    // User profile document: strictly accessible only by the owning authenticated user
+    // User profile document: strictly accessible only by the owning authenticated user or authorized shared vault owners
     match /users/{userId} {
       allow read: if isOwner(userId);
       allow create: if isOwner(userId) && isValidUser(request.resource.data, userId);

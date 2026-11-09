@@ -28,13 +28,13 @@ import { Item, UserAccount, GitHubCredential, ConsistencyVault } from '@smartnot
 
 // Firebase configuration strictly from environment variables (no hardcoded credentials!)
 export const firebaseConfig = {
-  apiKey: import.meta.env.VITE_FIREBASE_API_KEY || '',
-  authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN || '',
-  projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID || '',
-  storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET || '',
-  messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID || '',
-  appId: import.meta.env.VITE_FIREBASE_APP_ID || '',
-  measurementId: import.meta.env.VITE_FIREBASE_MEASUREMENT_ID || ''
+  apiKey: (typeof import.meta !== 'undefined' && import.meta.env?.VITE_FIREBASE_API_KEY) || '',
+  authDomain: (typeof import.meta !== 'undefined' && import.meta.env?.VITE_FIREBASE_AUTH_DOMAIN) || '',
+  projectId: (typeof import.meta !== 'undefined' && import.meta.env?.VITE_FIREBASE_PROJECT_ID) || '',
+  storageBucket: (typeof import.meta !== 'undefined' && import.meta.env?.VITE_FIREBASE_STORAGE_BUCKET) || '',
+  messagingSenderId: (typeof import.meta !== 'undefined' && import.meta.env?.VITE_FIREBASE_MESSAGING_SENDER_ID) || '',
+  appId: (typeof import.meta !== 'undefined' && import.meta.env?.VITE_FIREBASE_APP_ID) || '',
+  measurementId: (typeof import.meta !== 'undefined' && import.meta.env?.VITE_FIREBASE_MEASUREMENT_ID) || ''
 };
 
 export const isFirebaseConfigured = Boolean(
@@ -62,11 +62,24 @@ if (typeof window !== 'undefined' && app) {
   });
 }
 
-export const AUTHORIZED_EMAIL = 'gulesh.patel.csit@gmail.com';
+export const AUTHORIZED_EMAILS = [
+  'gulesh.patel.csit@gmail.com',
+  'gulesh788@gmail.com'
+];
+
+export const AUTHORIZED_EMAIL = AUTHORIZED_EMAILS[0];
+export const SHARED_VAULT_ID = 'gulesh_shared_vault';
+
+export function isAuthorizedEmail(email: string | null | undefined): boolean {
+  if (!email) return false;
+  const clean = email.toLowerCase().trim();
+  return AUTHORIZED_EMAILS.some(a => a.toLowerCase().trim() === clean);
+}
 
 /**
- * Signs in using Google Popup and enforces that only gulesh.patel.csit@gmail.com
- * is allowed to access the Smart Notes vault.
+ * Signs in using Google Popup and enforces that only authorized accounts
+ * (gulesh.patel.csit@gmail.com and gulesh788@gmail.com) can access the Smart Notes vault.
+ * Both accounts share the unified workspace vault (SHARED_VAULT_ID).
  */
 export async function firebaseGoogleSignIn(): Promise<UserAccount> {
   if (!auth) {
@@ -82,14 +95,14 @@ export async function firebaseGoogleSignIn(): Promise<UserAccount> {
   const user = cred.user;
   const email = (user.email || '').toLowerCase().trim();
 
-  if (email !== AUTHORIZED_EMAIL.toLowerCase()) {
+  if (!isAuthorizedEmail(email)) {
     await signOut(auth);
-    throw new Error(`Access Denied: Only ${AUTHORIZED_EMAIL} is authorized to access this Smart Notes workspace.`);
+    throw new Error(`Access Denied: Only authorized accounts (${AUTHORIZED_EMAILS.join(', ')}) can access this Smart Notes workspace.`);
   }
 
   return {
-    id: user.uid,
-    email: user.email || AUTHORIZED_EMAIL,
+    id: SHARED_VAULT_ID,
+    email: user.email || email,
     displayName: user.displayName || 'Gulesh Patel',
     createdAt: Date.now()
   };

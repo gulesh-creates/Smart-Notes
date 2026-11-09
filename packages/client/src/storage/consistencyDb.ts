@@ -966,7 +966,7 @@ export function reconcileConsistencyVaults(
       qualifyingThreshold: local.settings?.qualifyingThreshold ?? remote.settings?.qualifyingThreshold ?? 40,
       timerSound: local.settings?.timerSound ?? remote.settings?.timerSound ?? 'bell'
     },
-    updatedAt: Math.max(local.updatedAt || 0, remote.updatedAt || 0, Date.now())
+    updatedAt: Math.max(local.updatedAt || 0, remote.updatedAt || 0) || Date.now()
   };
 }
 
